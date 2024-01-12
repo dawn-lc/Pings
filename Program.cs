@@ -1,7 +1,8 @@
 ﻿using Spectre.Console;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.NetworkInformation;
-using System.Runtime.InteropServices;
+using System.Text;
 namespace Pings
 {
     public static class IPStatusExtensions
@@ -26,8 +27,8 @@ namespace Pings
                 IPStatus.PacketTooBig => "数据包过大",
                 IPStatus.ParameterProblem => "参数问题",
                 IPStatus.SourceQuench => "数据包被放弃",
-                IPStatus.Success => "在线",
-                IPStatus.TimedOut => "超时",
+                IPStatus.Success => "连接正常",
+                IPStatus.TimedOut => "连接超时",
                 IPStatus.TimeExceeded => "生存时间过期",
                 IPStatus.TtlExpired => "TTL值过期",
                 IPStatus.TtlReassemblyTimeExceeded => "重组超时",
@@ -37,31 +38,76 @@ namespace Pings
             };
         }
     }
-    class ICMPMonitor(CancellationTokenSource cancellationTokenSource)
+    class ICMPMonitor
     {
-        private readonly CancellationTokenSource CTS = cancellationTokenSource;
-        private Dictionary<string, ICMPTestTask> Tasks { get; set; } = [];
+        private ConcurrentQueue<string> Logs { get; set; }
+        private CancellationTokenSource CTS { get; set; }
+        private Dictionary<string, ICMPTestTask> Tasks { get; set; }
+        public ICMPMonitor(CancellationTokenSource cancellationTokenSource)
+        {
+            Logs = new();
+            Tasks = new();
+            CTS = cancellationTokenSource;
+            Task.Run(async () =>
+            {
+                while (!CTS.Token.IsCancellationRequested)
+                {
+                    await WriteLog();
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), CTS.Token);
+                }
+                await WriteLog();
+            }, CTS.Token);
+        }
+        private Task WriteLog()
+        {
+            using StreamWriter outputFile = new(".\\pings.log", true);
+            StringBuilder builder = new();
+            while (Logs.TryDequeue(out string? item) && item != null)
+            {
+                builder.AppendLine(item);
+            }
+            return outputFile.WriteAsync(builder);
+        }
         public void AddHost(string name, string ip, int timeout)
         {
             Tasks[ip] = new ICMPTestTask(name, ip, timeout, CTS);
+            Tasks[ip].StatusChanged += (task) => Logs.Enqueue($"{task.Time:yyyy/MM/dd hh:mm:ss} {task.Name}({task.IP}) {task.State.ToChineseString()}");
         }
         public Table GetTable()
         {
             Table table = new() { Title = new TableTitle("Pings (按Q键退出程序)") };
-            table.AddColumns("时间", "名称", "IP/域名", "状态", "延迟");
+            table.AddColumns("名称", "IP/域名", "状态", "延迟");
             foreach (var task in Tasks.Values)
             {
-                table.AddRow(task.Time.ToString("yyyy-MM-dd HH:mm:ss"), task.Name, task.IP, task.State.ToChineseString(), task.Delay == null ? "无效": $"{task.Delay?.Milliseconds}ms");
+                table.AddRow(task.Name, task.IP, task.State.ToChineseString(), task.Delay == null ? "无效": $"{task.Delay?.Milliseconds}ms");
             }
             return table;
         }
     }
     class ICMPTestTask
     {
+        public event Action<ICMPTestTask>? StatusChanged;
         public string Name { get; set; }
         public string IP { get; set; }
         public DateTime Time { get; set; } = DateTime.Now;
-        public IPStatus State { get; set; } = IPStatus.Unknown;
+
+        private IPStatus? state;
+        public IPStatus State
+        {
+            get
+            {
+                return state ?? IPStatus.Unknown;
+            }
+            set
+            {
+                if (state != value)
+                {
+                    state = value;
+                    Time = DateTime.Now;
+                    StatusChanged?.Invoke(this);
+                }
+            }
+        }
         public TimeSpan? Delay { get; set; }
         public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
         {
@@ -76,12 +122,7 @@ namespace Pings
                     {
                         PingReply reply = ping.Send(IP, timeout);
                         State = reply.Status;
-                        Delay = null;
-                        if (reply.Status == IPStatus.Success)
-                        {
-                            Time = DateTime.Now;
-                            Delay = TimeSpan.FromMilliseconds(reply.RoundtripTime);
-                        }
+                        Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : null;
                     }
                     catch
                     {
@@ -105,7 +146,6 @@ namespace Pings
         }
         static void Main(string[] args)
         {
-           if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) Console.CursorVisible = false;
             string configPath = args.Length > 0 ? args[0] : ".\\config.txt";
             if (!File.Exists(configPath))
             {
