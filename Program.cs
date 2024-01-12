@@ -60,7 +60,7 @@ namespace Pings
         }
         private Task WriteLog()
         {
-            using StreamWriter outputFile = new(".\\pings.log", true);
+            using StreamWriter outputFile = new(Path.GetFullPath("pings.log"), true);
             StringBuilder builder = new();
             while (Logs.TryDequeue(out string? item) && item != null)
             {
@@ -71,7 +71,7 @@ namespace Pings
         public void AddHost(string name, string ip, int timeout)
         {
             Tasks[ip] = new ICMPTestTask(name, ip, timeout, CTS);
-            Tasks[ip].StatusChanged += (task) => Logs.Enqueue($"{task.Time:yyyy/MM/dd hh:mm:ss} {task.Name}({task.IP}) {task.State.ToChineseString()}");
+            Tasks[ip].StatusChanged += (task) => Logs.Enqueue($"[{task.Time:yyyy/MM/dd hh:mm:ss}] {task.Name}({task.IP}) {task.State.ToChineseString()}");
         }
         public Table GetTable()
         {
@@ -146,7 +146,7 @@ namespace Pings
         }
         static void Main(string[] args)
         {
-            string configPath = args.Length > 0 ? args[0] : ".\\config.txt";
+            string configPath = Path.GetFullPath(args.Length > 0 ? args[0] : "config.txt");
             if (!File.Exists(configPath))
             {
                 AnsiConsole.WriteLine($"配置文件 {configPath} 不存在。");
