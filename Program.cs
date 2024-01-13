@@ -208,7 +208,6 @@ namespace Pings
                 {
                     cts.Cancel();
                     AnsiConsole.WriteLine("正在退出...");
-                    Console.CursorVisible = true;
                     break;
                 }
             }
