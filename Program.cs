@@ -27,8 +27,8 @@ namespace Pings
                 IPStatus.PacketTooBig => "数据包过大",
                 IPStatus.ParameterProblem => "参数问题",
                 IPStatus.SourceQuench => "数据包被放弃",
-                IPStatus.Success => "连接正常",
-                IPStatus.TimedOut => "连接超时",
+                IPStatus.Success => "请求成功",
+                IPStatus.TimedOut => "请求超时",
                 IPStatus.TimeExceeded => "生存时间过期",
                 IPStatus.TtlExpired => "TTL值过期",
                 IPStatus.TtlReassemblyTimeExceeded => "重组超时",
@@ -71,7 +71,8 @@ namespace Pings
         public void AddHost(string name, string ip, int timeout)
         {
             Tasks[ip] = new ICMPTestTask(name, ip, timeout, CTS);
-            Tasks[ip].StatusChanged += (task) => Logs.Enqueue($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss}] {task.Name}({task.IP}) {task.State.ToChineseString()}");
+            Tasks[ip].StatusChanged += (task) => Logs.Enqueue($"[{DateTime.Now:yyyy-MM-ddTHH:mm:ss}] {task.Name}({task.IP}) {task.State.ToChineseString()} {(task.State == IPStatus.Success ? $"{(int)task.Delay.TotalMilliseconds}ms" : null)}");
+            Tasks[ip].DelayChanged += (task) => Logs.Enqueue($"[{DateTime.Now:yyyy-MM-ddTHH:mm:ss}] {task.Name}({task.IP}) 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms");
         }
     }
     class ICMPTestTask
@@ -96,8 +97,9 @@ namespace Pings
                 }
             }
         }
-        private TimeSpan? delay;
-        public TimeSpan? Delay
+        public TimeSpan PreviousDelay { get; set; } 
+        private TimeSpan delay;
+        public TimeSpan Delay
         {
             get
             {
@@ -107,15 +109,27 @@ namespace Pings
             {
                 if (delay != value)
                 {
+                    if (value > TimeSpan.FromMilliseconds(-1)) PreviousDelay = delay;
                     delay = value;
-                    DelayChanged?.Invoke(this);
+                    if (IsSignificantDelayChange()) DelayChanged?.Invoke(this);
                 }
             }
+        }
+        private bool IsSignificantDelayChange()
+        {
+            const double SIGNIFICANT_CHANGE_THRESHOLD = 0.1;
+            const int MIN_DELAY_MILLISECONDS = 1;
+            return State == IPStatus.Success
+                && PreviousDelay > TimeSpan.FromMilliseconds(MIN_DELAY_MILLISECONDS)
+                && delay > TimeSpan.FromMilliseconds(MIN_DELAY_MILLISECONDS)
+                && delay > PreviousDelay
+                && (delay - PreviousDelay).Duration() / PreviousDelay >= SIGNIFICANT_CHANGE_THRESHOLD;
         }
         public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
         {
             Name = name;
             IP = ip;
+            PreviousDelay = TimeSpan.FromMilliseconds(-1);
             Task.Run(async () =>
             {
                 while (!CTS.Token.IsCancellationRequested)
@@ -124,8 +138,8 @@ namespace Pings
                     try
                     {
                         PingReply reply = ping.Send(IP, timeout);
+                        Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
                         State = reply.Status;
-                        Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : null;
                     }
                     catch
                     {
@@ -181,7 +195,7 @@ namespace Pings
                     table.Rows.Clear();
                     foreach (var task in monitor.Tasks.Values)
                     {
-                        table.AddRow(task.Name, task.IP, task.State.ToChineseString(), task.Delay == null ? "无效" : $"{task.Delay?.Milliseconds}ms");
+                        table.AddRow(task.Name, task.IP, task.State.ToChineseString(), $"{(int)task.Delay.TotalMilliseconds}ms");
                     }
                     ctx.Refresh();
                     await Task.Delay(1000, cts.Token);
