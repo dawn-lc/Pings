@@ -42,7 +42,7 @@ namespace Pings
     {
         private ConcurrentQueue<string> Logs { get; set; }
         private CancellationTokenSource CTS { get; set; }
-        private Dictionary<string, ICMPTestTask> Tasks { get; set; }
+        public Dictionary<string, ICMPTestTask> Tasks { get; set; }
         public ICMPMonitor(CancellationTokenSource cancellationTokenSource)
         {
             Logs = new();
@@ -71,26 +71,15 @@ namespace Pings
         public void AddHost(string name, string ip, int timeout)
         {
             Tasks[ip] = new ICMPTestTask(name, ip, timeout, CTS);
-            Tasks[ip].StatusChanged += (task) => Logs.Enqueue($"[{task.Time:yyyy/MM/dd hh:mm:ss}] {task.Name}({task.IP}) {task.State.ToChineseString()}");
-        }
-        public Table GetTable()
-        {
-            Table table = new() { Title = new TableTitle("Pings (按Q键退出程序)") };
-            table.AddColumns("名称", "IP/域名", "状态", "延迟");
-            foreach (var task in Tasks.Values)
-            {
-                table.AddRow(task.Name, task.IP, task.State.ToChineseString(), task.Delay == null ? "无效": $"{task.Delay?.Milliseconds}ms");
-            }
-            return table;
+            Tasks[ip].StatusChanged += (task) => Logs.Enqueue($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss}] {task.Name}({task.IP}) {task.State.ToChineseString()}");
         }
     }
     class ICMPTestTask
     {
         public event Action<ICMPTestTask>? StatusChanged;
-        public string Name { get; set; }
-        public string IP { get; set; }
-        public DateTime Time { get; set; } = DateTime.Now;
-
+        public event Action<ICMPTestTask>? DelayChanged;
+        public string Name { get; }
+        public string IP { get; }
         private IPStatus? state;
         public IPStatus State
         {
@@ -103,12 +92,26 @@ namespace Pings
                 if (state != value)
                 {
                     state = value;
-                    Time = DateTime.Now;
                     StatusChanged?.Invoke(this);
                 }
             }
         }
-        public TimeSpan? Delay { get; set; }
+        private TimeSpan? delay;
+        public TimeSpan? Delay
+        {
+            get
+            {
+                return delay;
+            }
+            set
+            {
+                if (delay != value)
+                {
+                    delay = value;
+                    DelayChanged?.Invoke(this);
+                }
+            }
+        }
         public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
         {
             Name = name;
@@ -167,17 +170,23 @@ namespace Pings
                     AnsiConsole.WriteLine($"无效的IP地址或域名：{parts[1]}");
                     return;
                 }
-                monitor.AddHost(parts[0], parts[1], 500);
+                monitor.AddHost(parts[0], parts[1], 1000);
             }
-            Task.Run(async () =>
+            Table table = new() { Title = new TableTitle("Pings (按Q键退出程序)") };
+            table.AddColumns("名称", "IP/域名", "状态", "延迟");
+            AnsiConsole.Live(table).StartAsync(async ctx =>
             {
                 while (!cts.Token.IsCancellationRequested)
                 {
-                    AnsiConsole.Clear();
-                    AnsiConsole.Write(monitor.GetTable());
+                    table.Rows.Clear();
+                    foreach (var task in monitor.Tasks.Values)
+                    {
+                        table.AddRow(task.Name, task.IP, task.State.ToChineseString(), task.Delay == null ? "无效" : $"{task.Delay?.Milliseconds}ms");
+                    }
+                    ctx.Refresh();
                     await Task.Delay(1000, cts.Token);
                 }
-            }, cts.Token);
+            });
             while (true)
             {
                 var key = Console.ReadKey(true);
