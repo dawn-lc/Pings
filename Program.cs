@@ -118,11 +118,11 @@ namespace Pings
         private bool IsSignificantDelayChange()
         {
             const double SIGNIFICANT_CHANGE_THRESHOLD = 0.1;
-            const int MIN_DELAY_MILLISECONDS = 1;
             return State == IPStatus.Success
-                && PreviousDelay > TimeSpan.FromMilliseconds(MIN_DELAY_MILLISECONDS)
-                && delay > TimeSpan.FromMilliseconds(MIN_DELAY_MILLISECONDS)
                 && delay > PreviousDelay
+                && PreviousDelay > TimeSpan.FromMilliseconds(0)
+                && delay > TimeSpan.FromMilliseconds(0)
+                && (delay - PreviousDelay).Duration() > TimeSpan.FromMilliseconds(1)
                 && (delay - PreviousDelay).Duration() / PreviousDelay >= SIGNIFICANT_CHANGE_THRESHOLD;
         }
         public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
