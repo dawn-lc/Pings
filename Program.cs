@@ -244,7 +244,7 @@ namespace Pings
                     continue;
                 }
                 var (name, ip) = (split[0], split[1]);
-                if (!IsValidIP(ip) && !IsValidDomainName(name))
+                if (!IsValidIP(ip) && !IsValidDomainName(ip))
                 {
                     Logging.Log($"无效配置：{line}");
                     AnsiConsole.WriteLine($"无效配置：{line}");
