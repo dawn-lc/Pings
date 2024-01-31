@@ -3,6 +3,7 @@ using Spectre.Console.Rendering;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
 using System.Text;
 namespace Pings
 {
@@ -153,13 +154,15 @@ namespace Pings
         private bool disposedValue;
 
         private CancellationTokenSource CTS { get; set; }
-        private ConcurrentQueue<string> Logs { get; set; }
         private StreamWriter OutputFile { get; set; }
-        public Logging(string name)
+        private ConcurrentQueue<string>? Logs { get; set; }
+        private StringBuilder? Builder { get; set; }
+        public Logging(string output)
         {
             CTS = new();
             Logs = new();
-            OutputFile = new(Path.GetFullPath($"{name}.log"), true);
+            OutputFile = new(Path.GetFullPath(output), true);
+            Builder = new StringBuilder();
             Task.Run(async () =>
             {
                 while (!CTS.Token.IsCancellationRequested)
@@ -171,20 +174,20 @@ namespace Pings
         }
         private void Write()
         {
-            if (!Logs.IsEmpty)
+            if (!(Logs?.IsEmpty ?? false))
             {
-                StringBuilder builder = new();
-                while (Logs.TryDequeue(out string? item))
+                while (Logs?.TryDequeue(out string? item) ?? false)
                 {
-                     if (item != null) builder.AppendLine(item);
+                     if (item != null) Builder?.AppendLine(item);
                 }
-                OutputFile.Write(builder);
+                OutputFile.Write(Builder);
                 OutputFile.Flush();
+                Builder?.Clear();
             }
         }
         public void Log(string content)
         {
-            Logs.Enqueue($"[{DateTime.Now:yyyy-MM-ddTHH:mm:ss}] {content}");
+            Logs?.Enqueue($"[{DateTime.Now:yyyy-MM-ddTHH:mm:ss}] {content}");
         }
         protected virtual void Dispose(bool disposing)
         {
@@ -194,6 +197,8 @@ namespace Pings
                 {
                     Write();
                     CTS.Cancel();
+                    Builder = null;
+                    Logs = null;
                     OutputFile.Dispose();
                     CTS.Dispose();
                 }
@@ -209,7 +214,8 @@ namespace Pings
 
     internal class Program
     {
-        private static readonly CancellationTokenSource cts = new();
+        private static CancellationTokenSource CTS { get; set; } = new ();
+        private static Logging Logging { get; set; } = new(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "pings.log" : "/var/log/pings.log");
         static bool IsValidIP(string ip)
         {
             return IPAddress.TryParse(ip, out _);
@@ -218,55 +224,66 @@ namespace Pings
         {
             return Uri.CheckHostName(name) != UriHostNameType.Unknown;
         }
-        
-        static void Main(string[] args)
+        static Dictionary<string, string> GetConfig(string path)
         {
-            using Logging logging = new("pings");
-            string configPath = Path.GetFullPath(args.Length > 0 ? args[0] : "config.txt");
+            string configPath = Path.GetFullPath(path);
             if (!File.Exists(configPath))
             {
-                logging.Log($"配置文件 {configPath} 不存在。");
+                Logging.Log($"配置文件 {configPath} 不存在。");
                 AnsiConsole.WriteLine($"配置文件 {configPath} 不存在。");
-                return;
+                Environment.Exit(1);
             }
-            string[] configLines = File.ReadAllLines(configPath);
-            ICMPMonitor monitor = new(cts, logging);
-            foreach (var line in configLines)
+            Dictionary<string, string> config = [];
+            foreach (string line in File.ReadAllLines(configPath))
             {
-                var parts = line.Split(' ');
-                if (parts.Length < 2)
+                var split = line.Split(' ');
+                if (split.Length < 2)
                 {
-                    logging.Log($"配置文件格式错误：{line}");
+                    Logging.Log($"配置文件格式错误：{line}");
                     AnsiConsole.WriteLine($"配置文件格式错误：{line}");
-                    return;
+                    continue;
                 }
-                if (!IsValidIP(parts[1]) && !IsValidDomainName(parts[1]))
+                var (name, ip) = (split[0], split[1]);
+                if (!IsValidIP(ip) && !IsValidDomainName(name))
                 {
-                    logging.Log($"无效的IP地址或域名：{parts[1]}");
-                    AnsiConsole.WriteLine($"无效的IP地址或域名：{parts[1]}");
-                    return;
+                    Logging.Log($"无效配置：{line}");
+                    AnsiConsole.WriteLine($"无效配置：{line}");
+                    continue;
                 }
-                monitor.AddHost(parts[0], parts[1], 1000);
+                config[name] = ip;
             }
-            AnsiConsole.Clear();
-            AnsiConsole.Live(monitor.Tasks).StartAsync(async (ldc) =>
+            if (config.Count<1)
             {
-                while (!cts.IsCancellationRequested)
+                Logging.Log($"配置文件中未找到可读取的配置");
+                AnsiConsole.WriteLine($"配置文件中未找到可读取的配置");
+                Environment.Exit(1);
+            }
+            return config;
+        }
+        static void Main(string[] args)
+        {
+            AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+            {
+                Logging.Log("程序退出。");
+                CTS.Cancel();
+                Logging.Dispose();
+            };
+
+            ICMPMonitor monitor = new(CTS, Logging);
+            foreach (var item in GetConfig(args.Length > 0 ? args[0] : RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "config.txt" : "/etc/pings/config"))
+            {
+                monitor.AddHost(item.Key, item.Value, 1000);
+            }
+
+            AnsiConsole.Clear();
+            AnsiConsole.Live(monitor.Tasks).Start((ldc) =>
+            {
+                while (!CTS.IsCancellationRequested)
                 {
                     ldc.Refresh();
-                    await Task.Delay(1000, cts.Token);
+                    Thread.Sleep(100);
                 }
             });
-            while (true)
-            {
-                var key = Console.ReadKey(true);
-                if (key.Key == ConsoleKey.Q)
-                {
-                    cts.Cancel();
-                    logging.Log("退出程序");
-                    break;
-                }
-            }
         }
     }
 }
