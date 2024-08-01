@@ -6,6 +6,26 @@ using System.Net.NetworkInformation;
 using System.Text;
 namespace Pings
 {
+    public static class ThrottleExtensions
+    {
+        public static Action<T> Throttle<T>(this Action<T> action, int milliseconds, int maxCalls)
+        {
+            ConcurrentQueue<DateTime> callTimestamps = new();
+            return arg =>
+            {
+                DateTime now = DateTime.UtcNow;
+                while (callTimestamps.TryPeek(out DateTime timestamp) && (now - timestamp).TotalMilliseconds > milliseconds)
+                {
+                    callTimestamps.TryDequeue(out _);
+                }
+                if (callTimestamps.Count < maxCalls)
+                {
+                    action(arg);
+                    callTimestamps.Enqueue(now);
+                }
+            };
+        }
+    }
     public static class IPStatusExtensions
     {
         public static string ToChineseString(this IPStatus status)
@@ -74,8 +94,8 @@ namespace Pings
             newTask.WarningChanged += (task) =>
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog, task.Warning ? new Style(Color.Yellow, Color.Red, Decoration.Bold) : null));
-
                 Logging?.Log($"{task.Name}({task.IP}) {(task.Warning ? "触发" : "解除")}警告 当前状态：{task.State.ToChineseString()}");
+                AnsiConsole.Clear();
             };
             newTask.StatusChanged += (task) =>
             {
