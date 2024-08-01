@@ -73,7 +73,7 @@ namespace Pings
             Logging = logging;
             Tasks = [];
             TaskMap = [];
-            TasksTable = new() { Caption = new TableTitle("按 Q 退出/按 M 消除警告") };
+            TasksTable = new() { Caption = new TableTitle("退出(Q) / 消除警告(M) / 刷新面板(R)") };
             TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "历史警告");
             TasksTable.Centered();
         }
@@ -349,7 +349,7 @@ namespace Pings
                 while (!CTS.Token.IsCancellationRequested)
                 {
                     monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
-                    ctx.UpdateTarget(monitor.TasksTable);
+                    ctx.Refresh();
                     await Task.Delay(TimeSpan.FromSeconds(1), CTS.Token);
                 }
             });
@@ -361,6 +361,10 @@ namespace Pings
                     CTS.Cancel();
                     break;
                 }
+                if (key.Key == ConsoleKey.R)
+                {
+                    AnsiConsole.Clear();
+                }
                 if (key.Key == ConsoleKey.M)
                 {
                     foreach (var task in monitor.Tasks.FindAll(i => i.Warning))
@@ -368,7 +372,6 @@ namespace Pings
                         task.Warning = false;
                     }
                 }
-                AnsiConsole.Clear();
             }
         }
     }
