@@ -1,10 +1,10 @@
 ﻿using Spectre.Console;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading.Tasks;
 namespace Pings
 {
     public static class IPStatusExtensions
@@ -55,14 +55,16 @@ namespace Pings
             Tasks = [];
             TaskMap = [];
             TasksTable = new() { Caption = new TableTitle("按 Q 退出/按 M 消除警告") };
-            TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "记录");
+            TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "异常记录");
             TasksTable.Centered();
         }
 
         public void AddHost(string name, string ip, int timeout)
         {
             ICMPTestTask newTask = new(name, ip, timeout, CancellationTokenSource);
-            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text($"{(newTask.Delay.TotalMilliseconds < 0 ? "∞" : (int)newTask.Delay.TotalMilliseconds)}ms"), new Text(newTask.LastLog, newTask.Warning ? new Style(Color.Yellow, Color.Red, Decoration.Bold) : null)]));
+
+            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text($"{(newTask.Delay.TotalMilliseconds < 0 ? "∞" : (int)newTask.Delay.TotalMilliseconds)}ms"), new Text(newTask.LastLog)]));
+
             newTask.LastLogChanged += (task) =>
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog, task.Warning ? new Style(Color.Yellow, Color.Red, Decoration.Bold) : null));
@@ -106,15 +108,15 @@ namespace Pings
         {
             get
             {
-                return lastLog ?? State.ToChineseString();
+                return lastLog ?? $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {State.ToChineseString()}";
             }
             set
             {
-                if (!Warning && lastLog != value)
+                if (lastLog != value)
                 {
                     lastLog = value;
+                    if (!Warning) LastLogChanged?.Invoke(this);
                 }
-                LastLogChanged?.Invoke(this);
             }
         }
 
@@ -148,11 +150,12 @@ namespace Pings
                 {
                     state = value;
                     StatusChanged?.Invoke(this);
-                    LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {State.ToChineseString()}";
+                    lastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {State.ToChineseString()}";
                 }
                 if (State != IPStatus.Success) Warning = true;
             }
         }
+
         public TimeSpan PreviousDelay { get; set; } 
         private TimeSpan delay;
         public TimeSpan Delay
@@ -192,22 +195,25 @@ namespace Pings
             Name = name;
             IP = ip;
             PreviousDelay = TimeSpan.FromMilliseconds(-1);
+            Stopwatch stopwatch = new();
             Task.Run(async () =>
             {
                 while (!CTS.Token.IsCancellationRequested)
                 {
-                    using Ping ping = new();
                     try
                     {
+                        stopwatch.Restart();
+                        using Ping ping = new();
                         PingReply reply = ping.Send(IP, timeout);
-                        Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
+                        stopwatch.Stop();
                         State = reply.Status;
+                        Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
                     }
                     catch
                     {
                         State = IPStatus.Unknown;
                     }
-                    await Task.Delay(TimeSpan.FromMilliseconds(timeout), CTS.Token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(timeout) - stopwatch.Elapsed, CTS.Token);
                 }
             }, CTS.Token);
         }
@@ -232,7 +238,7 @@ namespace Pings
                 while (!CTS.Token.IsCancellationRequested)
                 {
                     Write();
-                    await Task.Delay(TimeSpan.FromMilliseconds(100), CTS.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(1), CTS.Token);
                 }
             }, CTS.Token);
         }
@@ -290,17 +296,19 @@ namespace Pings
         }
         static void Main(string[] args)
         {
+            Console.Title = "Pings";
             string configPath = Path.GetFullPath(args.Length > 0 ? args[0] : "config.txt");
             if (!File.Exists(configPath))
             {
                 AnsiConsole.WriteLine($"配置文件 {configPath} 不存在。请创建配置文件后启动！");
-                return;
+                if (!AnsiConsole.Confirm($"是否创建默认配置文件？")) return;
+                File.WriteAllText(configPath, "本机 127.0.0.1 1000");
             }
             string[] configLines = File.ReadAllLines(configPath);
             ICMPMonitor monitor = new(CTS, Logging);
             foreach (var line in configLines)
             {
-                var parts = line.Split(' ');
+                var parts = line.Trim().Split(' ');
                 if (parts.Length < 2)
                 {
                     AnsiConsole.WriteLine($"配置文件格式错误：{line}");
@@ -311,15 +319,21 @@ namespace Pings
                     AnsiConsole.WriteLine($"无效的IP地址或域名：{parts[1]}");
                     return;
                 }
-                monitor.AddHost(parts[0], parts[1], 1000);
+                int timeout = 1000;
+                if (parts.Length > 2 && Convert.ToInt32(parts[2]) > 0)
+                {
+                    timeout = Convert.ToInt32(parts[2]);
+                }
+                monitor.AddHost(parts[0], parts[1], timeout);
             }
+            AnsiConsole.Clear();
             AnsiConsole.Live(monitor.TasksTable).StartAsync(async ctx =>
             {
                 while (!CTS.Token.IsCancellationRequested)
                 {
-                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络侦测");
-                    ctx.Refresh();
-                    await Task.Delay(500, CTS.Token);
+                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
+                    ctx.UpdateTarget(monitor.TasksTable);
+                    await Task.Delay(1000, CTS.Token);
                 }
             });
             while (true)
@@ -337,6 +351,7 @@ namespace Pings
                         task.Warning = false;
                     }
                 }
+                AnsiConsole.Clear();
             }
         }
     }
