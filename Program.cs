@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
-using System.Runtime.InteropServices;
 using System.Text;
 namespace Pings
 {
@@ -44,7 +43,7 @@ namespace Pings
     {
         private CancellationTokenSource CancellationTokenSource { get; set; }
         private Logging? Logging { get; set; }
-        private Dictionary<string, int> TaskMap { get; set; } 
+        private Dictionary<string, int> TaskMap { get; set; }
         public Table TasksTable { get; set; }
         public List<ICMPTestTask> Tasks { get; set; }
 
@@ -55,15 +54,14 @@ namespace Pings
             Tasks = [];
             TaskMap = [];
             TasksTable = new() { Caption = new TableTitle("按 Q 退出/按 M 消除警告") };
-            TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "异常记录");
+            TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "历史警告");
             TasksTable.Centered();
         }
 
         public void AddHost(string name, string ip, int timeout)
         {
             ICMPTestTask newTask = new(name, ip, timeout, CancellationTokenSource);
-
-            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text($"{(newTask.Delay.TotalMilliseconds < 0 ? "∞" : (int)newTask.Delay.TotalMilliseconds)}ms"), new Text(newTask.LastLog)]));
+            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text(newTask.Delay.TotalMilliseconds < 0 ? "∞" : $"{(int)newTask.Delay.TotalMilliseconds}ms"), new Text($"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 无")]));
 
             newTask.LastLogChanged += (task) =>
             {
@@ -71,30 +69,35 @@ namespace Pings
             };
             newTask.DelayChanged += (task) =>
             {
-                TasksTable.Rows.Update(TaskMap[task.IP], 3, new Text($"{(task.Delay.TotalMilliseconds < 0 ? "∞" : (int)task.Delay.TotalMilliseconds)}ms"));
+                TasksTable.Rows.Update(TaskMap[task.IP], 3, new Text($"{(task.Delay.TotalMilliseconds < 0 ? "∞" : $"{(int)task.Delay.TotalMilliseconds}ms")}"));
             };
             newTask.WarningChanged += (task) =>
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog, task.Warning ? new Style(Color.Yellow, Color.Red, Decoration.Bold) : null));
+
                 Logging?.Log($"{task.Name}({task.IP}) {(task.Warning ? "触发" : "解除")}警告 当前状态：{task.State.ToChineseString()}");
             };
             newTask.StatusChanged += (task) =>
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 2, new Text(task.State.ToChineseString()));
-                Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(task.Delay.TotalMilliseconds < 0 ? "∞" : (int)task.Delay.TotalMilliseconds)}ms");
+
+                task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {task.State.ToChineseString()}";
+                if (task.State != IPStatus.Success) task.Warning = true;
+
+                Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(task.Delay.TotalMilliseconds < 0 ? "∞" : $"{(int)task.Delay.TotalMilliseconds}ms")}");
             };
             newTask.DelayExceptionOccurred += (task) =>
             {
-                Logging?.Log($"{task.Name}({task.IP}) 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(task.Delay.TotalMilliseconds < 0 ? "∞" : (int)task.Delay.TotalMilliseconds)}ms");
+                task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
+
+                Logging?.Log($"{task.Name}({task.IP}) 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms");
             };
             Tasks.Add(newTask);
         }
     }
 
-
     class ICMPTestTask
     {
-
         public event Action<ICMPTestTask>? WarningChanged;
         public event Action<ICMPTestTask>? LastLogChanged;
         public event Action<ICMPTestTask>? StatusChanged;
@@ -150,13 +153,11 @@ namespace Pings
                 {
                     state = value;
                     StatusChanged?.Invoke(this);
-                    lastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {State.ToChineseString()}";
                 }
-                if (State != IPStatus.Success) Warning = true;
             }
         }
 
-        public TimeSpan PreviousDelay { get; set; } 
+        public TimeSpan PreviousDelay { get; set; }
         private TimeSpan delay;
         public TimeSpan Delay
         {
@@ -174,7 +175,6 @@ namespace Pings
                     if (IsSignificantDelayChange())
                     {
                         DelayExceptionOccurred?.Invoke(this);
-                        LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 延迟波动 {(int)PreviousDelay.TotalMilliseconds}ms -> {(int)Delay.TotalMilliseconds}ms";
                     }
                 }
             }
@@ -182,13 +182,9 @@ namespace Pings
 
         private bool IsSignificantDelayChange()
         {
-            const double SIGNIFICANT_CHANGE_THRESHOLD = 0.3;
             return State == IPStatus.Success
                 && delay > PreviousDelay
-                && PreviousDelay > TimeSpan.FromMilliseconds(0)
-                && delay > TimeSpan.FromMilliseconds(0)
-                && (delay - PreviousDelay).Duration() > TimeSpan.FromMilliseconds(1)
-                && (delay - PreviousDelay).Duration() / PreviousDelay >= SIGNIFICANT_CHANGE_THRESHOLD;
+                && (delay - PreviousDelay).Duration() > TimeSpan.FromMilliseconds(4);
         }
         public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
         {
@@ -218,8 +214,8 @@ namespace Pings
             }, CTS.Token);
         }
     }
-    
-    class Logging: IDisposable
+
+    class Logging : IDisposable
     {
         private bool disposedValue;
 
@@ -248,7 +244,7 @@ namespace Pings
             {
                 while (Logs?.TryDequeue(out string? item) ?? false)
                 {
-                     if (item != null) Builder?.AppendLine(item);
+                    if (item != null) Builder?.AppendLine(item);
                 }
                 OutputFile.Write(Builder);
                 OutputFile.Flush();
@@ -284,8 +280,8 @@ namespace Pings
 
     internal class Program
     {
-        private static CancellationTokenSource CTS { get; set; } = new ();
-        private static Logging Logging { get; set; } = new(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "pings.log" : "/var/log/pings.log");
+        private static CancellationTokenSource CTS { get; set; } = new();
+        private static Logging Logging { get; set; } = new("Pings.log");
         static bool IsValidIP(string ip)
         {
             return IPAddress.TryParse(ip, out _);
@@ -297,6 +293,7 @@ namespace Pings
         static void Main(string[] args)
         {
             Console.Title = "Pings";
+
             string configPath = Path.GetFullPath(args.Length > 0 ? args[0] : "config.txt");
             if (!File.Exists(configPath))
             {
@@ -333,7 +330,7 @@ namespace Pings
                 {
                     monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
                     ctx.UpdateTarget(monitor.TasksTable);
-                    await Task.Delay(1000, CTS.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(1), CTS.Token);
                 }
             });
             while (true)
@@ -346,7 +343,7 @@ namespace Pings
                 }
                 if (key.Key == ConsoleKey.M)
                 {
-                    foreach (var task in monitor.Tasks)
+                    foreach (var task in monitor.Tasks.FindAll(i => i.Warning))
                     {
                         task.Warning = false;
                     }
