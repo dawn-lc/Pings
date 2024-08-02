@@ -90,7 +90,7 @@ namespace Pings
             Logging = logging;
             Tasks = [];
             TaskMap = [];
-            TasksTable = new() { Caption = new TableTitle("退出(Q) / 确认警告(C)") };
+            TasksTable = new() { Caption = new TableTitle("确认警告(C) / 退出(Q)") };
             TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "警告/日志");
             TasksTable.Centered();
         }
@@ -371,7 +371,7 @@ namespace Pings
                     AnsiConsole.WriteLine($"无效的IP地址或域名：{parts[1]}");
                     return;
                 }
-                int timeout = 1000;
+                int timeout = 5000;
                 if (parts.Length > 2 && Convert.ToInt32(parts[2]) > 0)
                 {
                     timeout = Convert.ToInt32(parts[2]);
