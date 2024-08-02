@@ -90,8 +90,8 @@ namespace Pings
             Logging = logging;
             Tasks = [];
             TaskMap = [];
-            TasksTable = new() { Caption = new TableTitle("退出(Q) / 消除警告(M)") };
-            TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "历史警告");
+            TasksTable = new() { Caption = new TableTitle("退出(Q) / 确认警告(C)") };
+            TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "警告/日志");
             TasksTable.Centered();
         }
 
@@ -137,14 +137,14 @@ namespace Pings
 
                 TasksTable.Rows.Update(TaskMap[task.IP], 2, new Text(task.State.ToChineseString()));
 
-                if (task.State != IPStatus.Success) task.Warnings.Enqueue($"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {task.State.ToChineseString()}");
-                task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {task.State.ToChineseString()}";
+                task.LastLog = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {task.State.ToChineseString()}";
+                if (task.State != IPStatus.Success) task.Warnings.Enqueue($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {task.State.ToChineseString()}");
             };
             newTask.DelayExceptionOccurred += (task) =>
             {
                 Logging?.Log($"{task.Name}({task.IP}) 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms");
 
-                task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
+                task.LastLog = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
             };
             Tasks.Add(newTask);
         }
@@ -166,13 +166,14 @@ namespace Pings
         {
             get
             {
-                return lastLog ?? $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 无";
+                return lastLog ?? $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 暂无日志";
             }
             set
             {
                 if (LastLog != value)
                 {
                     lastLog = value;
+                    LastLogChanged?.Invoke(this);
                 }
             }
         }
@@ -395,7 +396,7 @@ namespace Pings
                     CTS.Cancel();
                     break;
                 }
-                if (key.Key == ConsoleKey.M)
+                if (key.Key == ConsoleKey.C)
                 {
                     foreach (var task in monitor.Tasks.FindAll(i => i.IsWarning))
                     {
