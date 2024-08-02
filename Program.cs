@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
-using System.Threading.Tasks;
 namespace Pings
 {
     public class ObservableQueue<T> : Queue<T>
@@ -21,26 +20,6 @@ namespace Pings
             T item = base.Dequeue();
             Dequeued?.Invoke(item);
             return item;
-        }
-    }
-    public static class ThrottleExtensions
-    {
-        public static Action<T> Throttle<T>(this Action<T> action, int milliseconds, int maxCalls)
-        {
-            ConcurrentQueue<DateTime> callTimestamps = new();
-            return arg =>
-            {
-                DateTime now = DateTime.UtcNow;
-                while (callTimestamps.TryPeek(out DateTime timestamp) && (now - timestamp).TotalMilliseconds > milliseconds)
-                {
-                    callTimestamps.TryDequeue(out _);
-                }
-                if (callTimestamps.Count < maxCalls)
-                {
-                    action(arg);
-                    callTimestamps.Enqueue(now);
-                }
-            };
         }
     }
     public static class IPStatusExtensions
@@ -356,29 +335,27 @@ namespace Pings
                 if (!AnsiConsole.Confirm($"是否创建默认配置文件？")) return;
                 File.WriteAllText(configPath, "本机 127.0.0.1 1000");
             }
-            string[] configLines = File.ReadAllLines(configPath);
+
             ICMPMonitor monitor = new(CTS, Logging);
+            string[] configLines = File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1).ToArray();
             foreach (var line in configLines)
             {
-                var parts = line.Trim().Split(' ');
-                if (parts.Length < 2)
-                {
-                    AnsiConsole.WriteLine($"配置文件格式错误：{line}");
-                    return;
-                }
+                var parts = line.Split(' ');
                 if (!IsValidIP(parts[1]) && !IsValidDomainName(parts[1]))
                 {
                     AnsiConsole.WriteLine($"无效的IP地址或域名：{parts[1]}");
                     return;
                 }
-                int timeout = 5000;
+                int timeout = 1000;
                 if (parts.Length > 2 && Convert.ToInt32(parts[2]) > 0)
                 {
                     timeout = Convert.ToInt32(parts[2]);
                 }
                 monitor.AddHost(parts[0], parts[1], timeout);
+                Thread.Sleep(new Random().Next(0,50));
             }
             AnsiConsole.Clear();
+            AnsiConsole.WriteLine();
             AnsiConsole.Live(monitor.TasksTable).StartAsync(async ctx =>
             {
                 while (!CTS.Token.IsCancellationRequested)
