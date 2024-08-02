@@ -116,20 +116,20 @@ namespace Pings
 
                 TasksTable.Rows.Update(TaskMap[task.IP], 2, new Text(task.State.ToChineseString()));
 
-                task.LastLog = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {task.State.ToChineseString()}";
-                if (task.State != IPStatus.Success) task.Warnings.Enqueue($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {task.State.ToChineseString()}");
+                task.LastLog = $"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ";
+                if (task.State != IPStatus.Success) task.Warnings.Enqueue($"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
             };
             newTask.DelayExceptionOccurred += (task) =>
             {
                 Logging?.Log($"{task.Name}({task.IP}) 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms");
 
-                task.LastLog = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
+                task.LastLog = $"延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
             };
             newTask.RecentLossRateRecorded += (task) =>
             {
-                Logging?.Log($"{task.Name}({task.IP}) 丢包率 {task.RecentLossRate:F2}%");
+                Logging?.Log($"丢包率 {task.RecentLossRate:F2}%");
 
-                task.LastLog = $"{task.Name}({task.IP}) 丢包率 {task.RecentLossRate:F2}%";
+                task.LastLog = $"丢包率 {task.RecentLossRate:F2}%";
             };
             Tasks.Add(newTask);
         }
@@ -165,7 +165,7 @@ namespace Pings
         {
             get
             {
-                return lastLog ?? $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 暂无日志";
+                return lastLog ?? "暂无日志";
             }
             set
             {
