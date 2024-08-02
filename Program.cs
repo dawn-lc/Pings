@@ -125,20 +125,40 @@ namespace Pings
 
                 task.LastLog = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
             };
+            newTask.RecentLossRateRecorded += (task) =>
+            {
+                Logging?.Log($"{task.Name}({task.IP}) 丢包率 {task.RecentLossRate:F2}%");
+
+                task.LastLog = $"{task.Name}({task.IP}) 丢包率 {task.RecentLossRate:F2}%";
+            };
             Tasks.Add(newTask);
         }
     }
 
-    class ICMPTestTask
+    public class ICMPTestTask
     {
+        public static readonly TimeSpan DefaultDelay = TimeSpan.FromMilliseconds(-1);
+        public static readonly TimeSpan SignificantDelayThreshold = TimeSpan.FromMilliseconds(4);
+
+        public const int MaxRecentPackets = 1000;
+
         public event Action<ICMPTestTask>? OpenWarning;
         public event Action<ICMPTestTask>? ConfirmWarning;
         public event Action<ICMPTestTask>? LastLogChanged;
         public event Action<ICMPTestTask>? StatusChanged;
         public event Action<ICMPTestTask>? DelayChanged;
         public event Action<ICMPTestTask>? DelayExceptionOccurred;
+        public event Action<ICMPTestTask>? RecentLossRateRecorded;
+
         public string Name { get; }
         public string IP { get; }
+
+        public ObservableQueue<string> Warnings { get; set; } = new();
+        public TimeSpan PreviousDelay { get; set; } = DefaultDelay;
+        private Queue<IPStatus> RecentPackets { get; set; } = new();
+
+        public bool IsWarning => Warnings.Count > 0;
+        public double RecentLossRate => RecentPackets.Count == 0 ? 0 : (double)RecentPackets.Count(status => status != IPStatus.Success) / RecentPackets.Count * 100;
 
         private string? lastLog;
         public string LastLog
@@ -154,14 +174,6 @@ namespace Pings
                     lastLog = value;
                     LastLogChanged?.Invoke(this);
                 }
-            }
-        }
-        public ObservableQueue<string> Warnings { get; set; }
-        public bool IsWarning
-        {
-            get
-            {
-                return Warnings.Count > 0;
             }
         }
 
@@ -182,19 +194,18 @@ namespace Pings
             }
         }
 
-        public TimeSpan PreviousDelay { get; set; }
         private TimeSpan? delay;
         public TimeSpan Delay
         {
             get
             {
-                return delay ?? TimeSpan.FromMilliseconds(-1);
+                return delay ?? DefaultDelay;
             }
             set
             {
                 if (Delay != value)
                 {
-                    if (value > TimeSpan.FromMilliseconds(-1)) PreviousDelay = Delay;
+                    if (value > DefaultDelay) PreviousDelay = Delay;
                     delay = value;
                     DelayChanged?.Invoke(this);
                     if (IsSignificantDelayChange())
@@ -211,52 +222,62 @@ namespace Pings
                 && Delay > PreviousDelay
                 && (Delay - PreviousDelay).Duration() > TimeSpan.FromMilliseconds(4);
         }
+        private void UpdateRecentPackets(IPStatus state)
+        {
+            RecentPackets.Enqueue(state);
+            if (RecentPackets.Count > MaxRecentPackets)
+            {
+                RecentPackets.Dequeue();
+            }
+        }
+
         public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
         {
             Name = name;
             IP = ip;
-            Warnings = new();
-            Warnings.Enqueued += (warning) =>
-            {
-                OpenWarning?.Invoke(this);
-            };
-            Warnings.Dequeued += (warning) =>
-            {
-                ConfirmWarning?.Invoke(this);
-            };
-            PreviousDelay = TimeSpan.FromMilliseconds(-1);
-            Stopwatch stopwatch = new();
+            Warnings.Enqueued += warning => OpenWarning?.Invoke(this);
+            Warnings.Dequeued += warning => ConfirmWarning?.Invoke(this);
+
             Task.Run(async () =>
             {
-                PingReply? reply;
+                int pingCounter = 0;
+                Stopwatch stopwatch = new();
+                using Ping ping = new();
                 while (!CTS.Token.IsCancellationRequested)
                 {
-                    reply = null;
-                    using (Ping ping = new())
+                    PingReply? reply = null;
+                    try
                     {
-                        try
-                        {
-                            stopwatch.Restart();
-                            reply = ping.Send(IP, timeout);
-                            stopwatch.Stop();
-                            State = reply.Status;
-                            Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
-                        }
-                        catch
-                        {
-                            State = IPStatus.Unknown;
-                        }
-                        finally
-                        {
-                            ping.Dispose();
-                        }
+                        stopwatch.Restart();
+                        reply = ping.Send(IP, timeout);
+                        stopwatch.Stop();
+                        State = reply.Status;
+                        Delay = State == IPStatus.Success
+                            ? TimeSpan.FromMilliseconds(reply.RoundtripTime)
+                            : DefaultDelay;
                     }
+                    catch
+                    {
+                        State = IPStatus.Unknown;
+                        Delay = DefaultDelay;
+                    }
+
+                    UpdateRecentPackets(State);
+
+                    pingCounter++;
+                    if (pingCounter == MaxRecentPackets)
+                    {
+                        RecentLossRateRecorded?.Invoke(this);
+                        pingCounter = 0;
+                    }
+
                     var sleep = TimeSpan.FromMilliseconds(timeout) - stopwatch.Elapsed;
                     await Task.Delay(sleep > TimeSpan.Zero && sleep <= TimeSpan.FromMilliseconds(timeout) ? sleep : TimeSpan.FromMilliseconds(timeout), CTS.Token);
                 }
             }, CTS.Token);
         }
     }
+
 
     class Logging : IDisposable
     {
