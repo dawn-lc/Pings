@@ -228,22 +228,31 @@ namespace Pings
             Stopwatch stopwatch = new();
             Task.Run(async () =>
             {
+                PingReply? reply;
                 while (!CTS.Token.IsCancellationRequested)
                 {
-                    try
+                    reply = null;
+                    using (Ping ping = new())
                     {
-                        stopwatch.Restart();
-                        using Ping ping = new();
-                        PingReply reply = ping.Send(IP, timeout);
-                        stopwatch.Stop();
-                        State = reply.Status;
-                        Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
+                        try
+                        {
+                            stopwatch.Restart();
+                            reply = ping.Send(IP, timeout);
+                            stopwatch.Stop();
+                            State = reply.Status;
+                            Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
+                        }
+                        catch
+                        {
+                            State = IPStatus.Unknown;
+                        }
+                        finally
+                        {
+                            ping.Dispose();
+                        }
                     }
-                    catch
-                    {
-                        State = IPStatus.Unknown;
-                    }
-                    await Task.Delay(TimeSpan.FromMilliseconds(timeout) - stopwatch.Elapsed, CTS.Token);
+                    var sleep = TimeSpan.FromMilliseconds(timeout) - stopwatch.Elapsed;
+                    await Task.Delay(sleep > TimeSpan.Zero && sleep <= TimeSpan.FromMilliseconds(timeout) ? sleep : TimeSpan.FromMilliseconds(timeout), CTS.Token);
                 }
             }, CTS.Token);
         }
