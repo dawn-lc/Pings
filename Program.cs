@@ -81,7 +81,7 @@ namespace Pings
         public void AddHost(string name, string ip, int timeout)
         {
             ICMPTestTask newTask = new(name, ip, timeout, CancellationTokenSource);
-            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text(newTask.Delay.TotalMilliseconds < 0 ? "∞" : $"{(int)newTask.Delay.TotalMilliseconds}ms"), new Text($"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 无")]));
+            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text("-1ms"), new Text($"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 无")]));
 
             newTask.LastLogChanged += (task) =>
             {
@@ -89,7 +89,7 @@ namespace Pings
             };
             newTask.DelayChanged += (task) =>
             {
-                TasksTable.Rows.Update(TaskMap[task.IP], 3, new Text($"{(task.Delay.TotalMilliseconds < 0 ? "∞" : $"{(int)task.Delay.TotalMilliseconds}ms")}"));
+                TasksTable.Rows.Update(TaskMap[task.IP], 3, new Text($"{(int)task.Delay.TotalMilliseconds}ms"));
             };
             newTask.WarningChanged += (task) =>
             {
@@ -134,7 +134,7 @@ namespace Pings
             }
             set
             {
-                if (lastLog != value)
+                if (LastLog != value)
                 {
                     lastLog = value;
                     if (!Warning) LastLogChanged?.Invoke(this);
@@ -151,7 +151,7 @@ namespace Pings
             }
             set
             {
-                if (warning != value)
+                if (Warning != value)
                 {
                     warning = value;
                     WarningChanged?.Invoke(this);
@@ -168,7 +168,7 @@ namespace Pings
             }
             set
             {
-                if (state != value)
+                if (State != value)
                 {
                     state = value;
                     StatusChanged?.Invoke(this);
@@ -177,18 +177,18 @@ namespace Pings
         }
 
         public TimeSpan PreviousDelay { get; set; }
-        private TimeSpan delay;
+        private TimeSpan? delay;
         public TimeSpan Delay
         {
             get
             {
-                return delay;
+                return delay ?? TimeSpan.FromMilliseconds(-1);
             }
             set
             {
-                if (delay != value)
+                if (Delay != value)
                 {
-                    if (value > TimeSpan.FromMilliseconds(-1)) PreviousDelay = delay;
+                    if (value > TimeSpan.FromMilliseconds(-1)) PreviousDelay = Delay;
                     delay = value;
                     DelayChanged?.Invoke(this);
                     if (IsSignificantDelayChange())
@@ -202,8 +202,8 @@ namespace Pings
         private bool IsSignificantDelayChange()
         {
             return State == IPStatus.Success
-                && delay > PreviousDelay
-                && (delay - PreviousDelay).Duration() > TimeSpan.FromMilliseconds(4);
+                && Delay > PreviousDelay
+                && (Delay - PreviousDelay).Duration() > TimeSpan.FromMilliseconds(4);
         }
         public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
         {
@@ -222,6 +222,7 @@ namespace Pings
                         PingReply reply = ping.Send(IP, timeout);
                         stopwatch.Stop();
                         State = reply.Status;
+                        //if (IP =="127.0.0.1") Debugger.Break();
                         Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
                     }
                     catch
