@@ -4,8 +4,25 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
+using System.Threading.Tasks;
 namespace Pings
 {
+    public class ObservableQueue<T> : Queue<T>
+    {
+        public event Action<T>? Enqueued;
+        public event Action<T>? Dequeued;
+        public new void Enqueue(T item)
+        {
+            base.Enqueue(item);
+            Enqueued?.Invoke(item);
+        }
+        public new T Dequeue()
+        {
+            T item = base.Dequeue();
+            Dequeued?.Invoke(item);
+            return item;
+        }
+    }
     public static class ThrottleExtensions
     {
         public static Action<T> Throttle<T>(this Action<T> action, int milliseconds, int maxCalls)
@@ -81,29 +98,42 @@ namespace Pings
         public void AddHost(string name, string ip, int timeout)
         {
             ICMPTestTask newTask = new(name, ip, timeout, CancellationTokenSource);
-            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text("-1ms"), new Text($"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 无")]));
+
+            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text($"{newTask.Delay.TotalMilliseconds}ms"), new Text(newTask.LastLog)]));
 
             newTask.LastLogChanged += (task) =>
             {
-                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog, task.Warning ? new Style(Color.Yellow, Color.Red, Decoration.Bold) : null));
+                if (!task.IsWarning)
+                {
+                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog));
+                }
             };
             newTask.DelayChanged += (task) =>
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 3, new Text($"{(int)task.Delay.TotalMilliseconds}ms"));
             };
-            newTask.WarningChanged += (task) =>
+            newTask.OpenWarning += (task) =>
             {
-                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog, task.Warning ? new Style(Color.Yellow, Color.Red, Decoration.Bold) : null));
-                Logging?.Log($"{task.Name}({task.IP}) {(task.Warning ? "触发" : "解除")}警告 当前状态：{task.State.ToChineseString()}");
+                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.Warnings.Peek(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
+
+                Logging?.Log($"{task.Name}({task.IP}) 触发警告 当前状态：{task.State.ToChineseString()}");
+            };
+            newTask.ConfirmWarning += (task) =>
+            {
+                if (!task.IsWarning)
+                {
+                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog));
+                    Logging?.Log($"{task.Name}({task.IP}) 解除警告 当前状态：{task.State.ToChineseString()}");
+                }
             };
             newTask.StatusChanged += (task) =>
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 2, new Text(task.State.ToChineseString()));
 
+                if (task.State != IPStatus.Success) task.Warnings.Enqueue($"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {task.State.ToChineseString()}");
                 task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {task.State.ToChineseString()}";
-                if (task.State != IPStatus.Success) task.Warning = true;
 
-                Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(task.Delay.TotalMilliseconds < 0 ? "∞" : $"{(int)task.Delay.TotalMilliseconds}ms")}");
+                Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(int)task.Delay.TotalMilliseconds}ms");
             };
             newTask.DelayExceptionOccurred += (task) =>
             {
@@ -117,7 +147,8 @@ namespace Pings
 
     class ICMPTestTask
     {
-        public event Action<ICMPTestTask>? WarningChanged;
+        public event Action<ICMPTestTask>? OpenWarning;
+        public event Action<ICMPTestTask>? ConfirmWarning;
         public event Action<ICMPTestTask>? LastLogChanged;
         public event Action<ICMPTestTask>? StatusChanged;
         public event Action<ICMPTestTask>? DelayChanged;
@@ -130,32 +161,22 @@ namespace Pings
         {
             get
             {
-                return lastLog ?? $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {State.ToChineseString()}";
+                return lastLog ?? $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 无";
             }
             set
             {
                 if (LastLog != value)
                 {
                     lastLog = value;
-                    if (!Warning) LastLogChanged?.Invoke(this);
                 }
             }
         }
-
-        private bool? warning;
-        public bool Warning
+        public ObservableQueue<string> Warnings { get; set; }
+        public bool IsWarning
         {
             get
             {
-                return warning ?? false;
-            }
-            set
-            {
-                if (Warning != value)
-                {
-                    warning = value;
-                    WarningChanged?.Invoke(this);
-                }
+                return Warnings.Count > 0;
             }
         }
 
@@ -209,6 +230,15 @@ namespace Pings
         {
             Name = name;
             IP = ip;
+            Warnings = new();
+            Warnings.Enqueued += (warning) =>
+            {
+                OpenWarning?.Invoke(this);
+            };
+            Warnings.Dequeued += (warning) =>
+            {
+                ConfirmWarning?.Invoke(this);
+            };
             PreviousDelay = TimeSpan.FromMilliseconds(-1);
             Stopwatch stopwatch = new();
             Task.Run(async () =>
@@ -222,7 +252,6 @@ namespace Pings
                         PingReply reply = ping.Send(IP, timeout);
                         stopwatch.Stop();
                         State = reply.Status;
-                        //if (IP =="127.0.0.1") Debugger.Break();
                         Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : TimeSpan.FromMilliseconds(-1);
                     }
                     catch
@@ -363,9 +392,9 @@ namespace Pings
                 }
                 if (key.Key == ConsoleKey.M)
                 {
-                    foreach (var task in monitor.Tasks.FindAll(i => i.Warning))
+                    foreach (var task in monitor.Tasks.FindAll(i => i.IsWarning))
                     {
-                        task.Warning = false;
+                        task.Warnings.Dequeue();
                     }
                 }
             }
