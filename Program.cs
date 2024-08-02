@@ -73,7 +73,7 @@ namespace Pings
             Logging = logging;
             Tasks = [];
             TaskMap = [];
-            TasksTable = new() { Caption = new TableTitle("退出(Q) / 消除警告(M) / 刷新面板(R)") };
+            TasksTable = new() { Caption = new TableTitle("退出(Q) / 消除警告(M)") };
             TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "历史警告");
             TasksTable.Centered();
         }
@@ -95,7 +95,6 @@ namespace Pings
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog, task.Warning ? new Style(Color.Yellow, Color.Red, Decoration.Bold) : null));
                 Logging?.Log($"{task.Name}({task.IP}) {(task.Warning ? "触发" : "解除")}警告 当前状态：{task.State.ToChineseString()}");
-                AnsiConsole.Clear();
             };
             newTask.StatusChanged += (task) =>
             {
@@ -348,7 +347,7 @@ namespace Pings
             {
                 while (!CTS.Token.IsCancellationRequested)
                 {
-                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
+                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测"); 
                     ctx.Refresh();
                     await Task.Delay(TimeSpan.FromSeconds(1), CTS.Token);
                 }
@@ -360,10 +359,6 @@ namespace Pings
                 {
                     CTS.Cancel();
                     break;
-                }
-                if (key.Key == ConsoleKey.R)
-                {
-                    AnsiConsole.Clear();
                 }
                 if (key.Key == ConsoleKey.M)
                 {
