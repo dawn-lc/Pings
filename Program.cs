@@ -114,32 +114,37 @@ namespace Pings
             };
             newTask.OpenWarning += (task) =>
             {
-                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.Warnings.Peek(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
-
                 Logging?.Log($"{task.Name}({task.IP}) 触发警告 当前状态：{task.State.ToChineseString()}");
+
+                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.Warnings.Peek(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
             };
             newTask.ConfirmWarning += (task) =>
             {
                 if (!task.IsWarning)
                 {
-                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog));
                     Logging?.Log($"{task.Name}({task.IP}) 解除警告 当前状态：{task.State.ToChineseString()}");
+
+                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog));
+                }
+                else
+                {
+                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.Warnings.Peek(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
                 }
             };
             newTask.StatusChanged += (task) =>
             {
+                Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(int)task.Delay.TotalMilliseconds}ms");
+
                 TasksTable.Rows.Update(TaskMap[task.IP], 2, new Text(task.State.ToChineseString()));
 
                 if (task.State != IPStatus.Success) task.Warnings.Enqueue($"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {task.State.ToChineseString()}");
                 task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} {task.State.ToChineseString()}";
-
-                Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(int)task.Delay.TotalMilliseconds}ms");
             };
             newTask.DelayExceptionOccurred += (task) =>
             {
-                task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
-
                 Logging?.Log($"{task.Name}({task.IP}) 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms");
+
+                task.LastLog = $"{DateTime.Now:yyyy-MM-ddTHH:mm:ss} 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
             };
             Tasks.Add(newTask);
         }
