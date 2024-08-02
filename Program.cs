@@ -138,9 +138,9 @@ namespace Pings
     public class ICMPTestTask
     {
         public static readonly TimeSpan DefaultDelay = TimeSpan.FromMilliseconds(-1);
-        public static readonly TimeSpan SignificantDelayThreshold = TimeSpan.FromMilliseconds(4);
+        public static readonly TimeSpan SignificantDelayThreshold = TimeSpan.FromMilliseconds(20);
 
-        public const int MaxRecentPackets = 1000;
+        public const int MaxRecentPackets = 300;
 
         public event Action<ICMPTestTask>? OpenWarning;
         public event Action<ICMPTestTask>? ConfirmWarning;
@@ -219,8 +219,10 @@ namespace Pings
         private bool IsSignificantDelayChange()
         {
             return State == IPStatus.Success
+                && Delay > DefaultDelay
+                && PreviousDelay > DefaultDelay
                 && Delay > PreviousDelay
-                && (Delay - PreviousDelay).Duration() > TimeSpan.FromMilliseconds(4);
+                && (Delay - PreviousDelay).Duration() > SignificantDelayThreshold;
         }
         private void UpdateRecentPackets(IPStatus state)
         {
