@@ -17,6 +17,7 @@ jobs:
         configuration: [Release]
     runs-on: windows-latest
     env:
+      Project_Name: Pings
       Solution_Name: Pings.sln
       Release_Tag: latest
     steps:
@@ -34,7 +35,7 @@ jobs:
       run: dotnet tool install -g GitVersion.Tool
 
     - name: Add GitVersion to PATH
-      run: echo "$(echo $env:GITVERSION_JSON)" >> $Env:GITHUB_PATH
+      run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
     - name: Use GitVersion
       id: gitversion
@@ -46,21 +47,26 @@ jobs:
     - name: Build
       run: dotnet build --configuration Release
     
-    - name: Publish
-      run: dotnet publish -r win-x64 -c Release --output ./publish
-    
-    - name: Get GitVersion output
+    - name: Publish Windows Binaries
+      run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
+
+    - name: Get Publish Version
       id: gitversion-output
       run: |
         $version = dotnet-gitversion /output json | ConvertFrom-Json
-        $semVer = $version.SemVer
-        Write-Output "Build_Version=$semVer" >> $env:GITHUB_ENV
+        Write-Output "Publish_Version=$version.SemVer" >> $env:GITHUB_ENV
 
-    - name: 发布新版本
+    - name: Save Changes
+      run: |
+        git add .
+        git commit -m "Update version and Release"
+        git push
+
+    - name: Create Release
       uses: marvinpinto/action-automatic-releases@latest
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
-        title: "Release ${{ env.Build_Version }}"
-        files: ./publish/Pings.exe
+        title: "${{ env.Publish_Version }}"
+        files: ./publish/${{ env.Project_Name }}.exe
