@@ -34,18 +34,13 @@ jobs:
     - run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
-        $sourceFilePath="./gitversion.json";
+        $sourceFilePath="./GitVersion.yml";
         $destinationFolderPath="./.git/gitversion_cache/";
         $destinationFilePath="$destinationFolderPath/$hash";
         $hash=[BitConverter]::ToString(([System.Security.Cryptography.SHA1]::Create()).ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path $sourceFilePath -Raw)))) -replace '-','';
         if(-not (Test-Path -Path $destinationFolderPath)){New-Item -Path $destinationFolderPath -ItemType Directory};
         Move-Item -Path $sourceFilePath -Destination $destinationFilePath
-
-    - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v3.0.0
-      with:
-        versionSpec: '6.x'
-
+  
     - name: Install GitVersion
       run: dotnet tool install -g GitVersion.Tool
 
@@ -65,7 +60,7 @@ jobs:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
-        title: "${{ env.semVer }}"
+        title: "${{ env.GitVersion_SemVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
 
     - name: Save Changes
