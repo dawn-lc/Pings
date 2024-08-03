@@ -1,0 +1,11 @@
+﻿mode: ContinuousDeployment
+branches:
+  master:
+    tag: ''
+ignore:
+  sha: []
+increment: Patch
+next-version: 1.0.0
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatch
+commit-message-incrementing: Disabled

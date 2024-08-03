@@ -7,6 +7,7 @@ on:
       - '*.cs'
       - '*.csproj'
       - '*.sln'
+      - '*.yml'
 jobs:
   build:
     if: github.actor != 'github-actions'
