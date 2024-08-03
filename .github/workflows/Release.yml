@@ -34,7 +34,12 @@ jobs:
     - run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
-        Move-Item -Path "./gitversion.json" -Destination "./.git/gitversion_cache/$([BitConverter]::ToString(([System.Security.Cryptography.SHA1]::Create()).ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path './gitversion.json' -Raw)))) -replace '-', '')"
+        $sourceFilePath="./gitversion.json";
+        $destinationFolderPath="./.git/gitversion_cache/";
+        $destinationFilePath="$destinationFolderPath/$hash";
+        $hash=[BitConverter]::ToString(([System.Security.Cryptography.SHA1]::Create()).ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path $sourceFilePath -Raw)))) -replace '-','';
+        if(-not (Test-Path -Path $destinationFolderPath)){New-Item -Path $destinationFolderPath -ItemType Directory};
+        Move-Item -Path $sourceFilePath -Destination $destinationFilePath
 
     - name: Install GitVersion
       uses: gittools/actions/gitversion/setup@v3.0.0
