@@ -31,7 +31,8 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
-    - run: |
+    - name: Set git config
+      run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
 
@@ -46,13 +47,7 @@ jobs:
 
     - name: Use GitVersion
       id: gitversion
-      run: dotnet-gitversion /output file /outputfile gitversion.json /output json /output buildserver /config GitVersion.yml
-
-    - run: |
-        $gitversion=Get-ChildItem -Path "./.git/gitversion_cache/" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1;
-        $config = @{ GitVersion = @{ Name = $gitversion.Name } };
-        $config | ConvertTo-Json -Depth 4 | Set-Content -Path "./build/config.json"
-        Move-Item -Path $gitversion.FullName -Destination "./build/gitversion.json"
+      run: dotnet-gitversion /output json /output buildserver /config GitVersion.yml
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
@@ -65,6 +60,14 @@ jobs:
         prerelease: false
         title: "${{ env.GitVersion_SemVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
+
+    
+    - name: Move GitVersion cache to build
+      run: |
+        $gitversion=Get-ChildItem -Path "./.git/gitversion_cache/" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1;
+        $config = @{ GitVersion = @{ Name = $gitversion.Name } };
+        $config | ConvertTo-Json -Depth 8 | Set-Content -Path "./build/config.json"
+        Move-Item -Path $gitversion.FullName -Destination "./build/gitversion.json"
 
     - name: Save Changes
       run: |
