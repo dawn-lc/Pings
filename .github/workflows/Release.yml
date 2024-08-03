@@ -8,6 +8,7 @@ on:
       - '*.csproj'
       - '*.sln'
       - '*.yml'
+      - '.github/workflows/*.yml'
 jobs:
   build:
     if: github.actor != 'github-actions'
@@ -17,7 +18,7 @@ jobs:
     runs-on: windows-latest
     env:
       Solution_Name: Pings.sln
-      release_tag: latest
+      Release_Tag: latest
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -38,16 +39,6 @@ jobs:
     - name: Use GitVersion
       id: gitversion
       run: dotnet-gitversion /output json /output buildserver
-
-    - name: Extract GitVersion variables
-      id: extract_variables
-      run: |
-        echo "GITVERSION_JSON=${{ steps.gitversion.outputs.json }}" >> $env:GITHUB_ENV
-        echo "VERSION=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .SemVer)" >> $env:GITHUB_ENV
-        echo "ASSEMBLY_SEMVER=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .AssemblySemVer)" >> $env:GITHUB_ENV
-        echo "FILE_SEMVER=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .FileSemVer)" >> $env:GITHUB_ENV
-        echo "FULL_SEMVER=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .FullSemVer)" >> $env:GITHUB_ENV
-        echo "INFORMATIONAL_VERSION=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .InformationalVersion)" >> $env:GITHUB_ENV
     
     - name: Restore dependencies
       run: dotnet restore
@@ -58,11 +49,18 @@ jobs:
     - name: Publish
       run: dotnet publish -r win-x64 -c Release --output ./publish
     
+    - name: Get GitVersion output
+      id: gitversion-output
+      run: |
+        $version = dotnet-gitversion /output json | ConvertFrom-Json
+        $semVer = $version.SemVer
+        Write-Output "Build_Version=$semVer" >> $env:GITHUB_ENV
+
     - name: 发布新版本
       uses: marvinpinto/action-automatic-releases@latest
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "${{ env.release_tag }}"
+        automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
-        title: "${{ env.FILE_SEMVER }}"
+        title: "Release ${{ env.Build_Version }}"
         files: ./publish/Pings.exe
