@@ -26,6 +26,10 @@ jobs:
       with:
         fetch-depth: 0
 
+    - run: |
+        git config --global user.name github-actions
+        git config --global user.email github-actions@github.com
+
     - name: Install .NET
       uses: actions/setup-dotnet@v4
       with:
