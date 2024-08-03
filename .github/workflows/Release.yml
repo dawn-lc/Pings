@@ -26,13 +26,13 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Cache GitVersion cache
+    - name: Cache GitVersion
       uses: actions/cache@v3
       with:
         path: ./Pings/.git/gitversion_cache
-        key: ${{ runner.os }}-gitversion
+        key: ${{ runner.os }}-gitversion-${{ github.run_id }}
         restore-keys: |
-          ${{ runner.os }}-gitversion-
+          ${{ runner.os }}-gitversion
  
     - run: |
         git config --global user.name github-actions
