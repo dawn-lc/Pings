@@ -30,7 +30,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ./Pings/.git/gitversion_cache
-        key: ${{ runner.os }}-gitversion-${{ github.sha }}
+        key: ${{ runner.os }}-gitversion
         restore-keys: |
           ${{ runner.os }}-gitversion-
  
@@ -64,9 +64,3 @@ jobs:
         prerelease: false
         title: "${{ env.semVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
-
-    - name: Save Changes
-      run: |
-        git add .
-        git commit --amend --no-edit
-        git push --force
