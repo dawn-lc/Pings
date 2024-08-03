@@ -388,7 +388,7 @@ namespace Pings
                     timeout = Convert.ToInt32(parts[2]);
                 }
                 monitor.AddHost(parts[0], parts[1], timeout);
-                Thread.Sleep(rng.Next(0,50));
+                Thread.Sleep(rng.Next(50, 100));
             }
             AnsiConsole.Clear();
             AnsiConsole.WriteLine();
