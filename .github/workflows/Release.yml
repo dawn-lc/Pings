@@ -43,8 +43,6 @@ jobs:
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
-    - name: Publish Linux Binaries
-      run: dotnet publish ./${{ env.Project_Name }}.csproj -r Linux-x64 -c Release --output ./publish/
 
     - name: Create Release
       uses: marvinpinto/action-automatic-releases@latest
