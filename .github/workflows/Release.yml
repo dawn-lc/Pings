@@ -34,5 +34,5 @@ jobs:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.release_tag }}"
         prerelease: false
-        title: "Releases"
+        title: "Latest Build"
         files: bin/Release/net8.0/win-x64/publish/Pings.exe
