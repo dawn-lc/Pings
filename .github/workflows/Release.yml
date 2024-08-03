@@ -51,9 +51,7 @@ jobs:
         automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
         title: "${{ env.semVer }}"
-        files: |
-          ./publish/${{ env.Project_Name }}.exe
-          ./publish/${{ env.Project_Name }}
+        files: ./publish/${{ env.Project_Name }}.exe
 
     - name: Save Changes
       run: |
