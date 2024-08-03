@@ -279,8 +279,8 @@ namespace Pings
             }, CTS.Token);
         }
         public ICMPTestTask(string name, string ip, int timeout, int maxRecentPackets, CancellationTokenSource CTS) : this(name, ip, timeout, maxRecentPackets, 20, CTS) { }
-        public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS) : this(name, ip, timeout, 500, 20, CTS) { }
-        public ICMPTestTask(string name, string ip, CancellationTokenSource CTS) : this(name, ip, 1000, 500, 20, CTS) { }
+        public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS) : this(name, ip, timeout, 255, 20, CTS) { }
+        public ICMPTestTask(string name, string ip, CancellationTokenSource CTS) : this(name, ip, 1000, 255, 20, CTS) { }
     }
 
 
