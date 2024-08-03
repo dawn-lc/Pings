@@ -373,6 +373,7 @@ namespace Pings
 
             ICMPMonitor monitor = new(CTS, Logging);
             string[] configLines = File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1).ToArray();
+            Random rng = new();
             foreach (var line in configLines)
             {
                 var parts = line.Split(' ');
@@ -387,7 +388,7 @@ namespace Pings
                     timeout = Convert.ToInt32(parts[2]);
                 }
                 monitor.AddHost(parts[0], parts[1], timeout);
-                Thread.Sleep(new Random().Next(0,50));
+                Thread.Sleep(rng.Next(0,50));
             }
             AnsiConsole.Clear();
             AnsiConsole.WriteLine();
