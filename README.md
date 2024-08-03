@@ -22,7 +22,7 @@ cloudflare www.cloudflare.com 1500
 ```
 ### 运行
 配置完成后，可以通过以下命令启动 Pings:
-```bash
+```
 Pings <配置文件路径>
 ```
 如果没有指定配置文件路径，将默认使用当前目录下的 config.txt 文件。
