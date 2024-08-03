@@ -32,20 +32,25 @@ jobs:
     - name: Install GitVersion
       run: dotnet tool install -g GitVersion.Tool
 
+    - name: Add GitVersion to PATH
+      shell: bash
+      run: echo "$(dotnet tool list -g | grep 'GitVersion.Tool' | awk '{print $4}')" >> $GITHUB_PATH
+
     - name: Use GitVersion
-      run: gitversion /output json /output buildserver
       id: gitversion
+      run: dotnet-gitversion /output json /output buildserver
       env:
         GITVERSION_JSON: ${{ steps.gitversion.outputs.json }}
 
     - name: Extract GitVersion variables
       id: extract_variables
       run: |
-        echo "##[set-output name=Version;]$(echo ${{ steps.gitversion.outputs.json }} | jq -r .SemVer)"
-        echo "##[set-output name=AssemblySemVer;]$(echo ${{ steps.gitversion.outputs.json }} | jq -r .AssemblySemVer)"
-        echo "##[set-output name=FileSemVer;]$(echo ${{ steps.gitversion.outputs.json }} | jq -r .FileSemVer)"
-        echo "##[set-output name=FullSemVer;]$(echo ${{ steps.gitversion.outputs.json }} | jq -r .FullSemVer)"
-        echo "##[set-output name=InformationalVersion;]$(echo ${{ steps.gitversion.outputs.json }} | jq -r .InformationalVersion)"
+        echo "GITVERSION_JSON=${{ steps.gitversion.outputs.json }}" >> $GITHUB_ENV
+        echo "VERSION=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .SemVer)" >> $GITHUB_ENV
+        echo "ASSEMBLY_SEMVER=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .AssemblySemVer)" >> $GITHUB_ENV
+        echo "FILE_SEMVER=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .FileSemVer)" >> $GITHUB_ENV
+        echo "FULL_SEMVER=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .FullSemVer)" >> $GITHUB_ENV
+        echo "INFORMATIONAL_VERSION=$(echo ${{ steps.gitversion.outputs.json }} | jq -r .InformationalVersion)" >> $GITHUB_ENV
     
     - name: Restore dependencies
       run: dotnet restore
@@ -57,10 +62,10 @@ jobs:
       run: dotnet publish -r win-x64 -c Release --output ./publish
     
     - name: 发布新版本
-      uses: "marvinpinto/action-automatic-releases@latest"
+      uses: marvinpinto/action-automatic-releases@latest
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.release_tag }}"
         prerelease: false
-        title: "${{ steps.extract_variables.outputs.FileSemVer }}"
-        files: 。/publish/Pings.exe
+        title: "${{ env.FILE_SEMVER }}"
+        files: ./publish/Pings.exe
