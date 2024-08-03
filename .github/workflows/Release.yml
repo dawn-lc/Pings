@@ -29,7 +29,7 @@ jobs:
     - name: Cache GitVersion
       uses: actions/cache@v3
       with:
-        path: ./Pings/.git/gitversion_cache
+        path: ./Pings/.git/gitversion_cache/
         key: ${{ runner.os }}-gitversion-${{ github.run_id }}
         restore-keys: |
           ${{ runner.os }}-gitversion
