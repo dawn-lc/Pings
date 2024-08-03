@@ -25,14 +25,6 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-
-    - name: Cache GitVersion
-      uses: actions/cache@v3
-      with:
-        path: ./Pings/.git/gitversion_cache/
-        key: ${{ runner.os }}-gitversion-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-gitversion
  
     - run: |
         git config --global user.name github-actions
@@ -64,3 +56,9 @@ jobs:
         prerelease: false
         title: "${{ env.semVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
+
+    - name: Save Changes
+      run: |
+        git add .
+        git commit --amend --no-edit
+        git push --force
