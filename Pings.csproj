@@ -9,7 +9,8 @@
     <OptimizationPreference>Size</OptimizationPreference>
     <PublishTrimmed>true</PublishTrimmed>
     <IsTrimmable>true</IsTrimmable>
-	<TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+    <Deterministic>true</Deterministic>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <StackTraceSupport>false</StackTraceSupport>
     <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
@@ -27,9 +28,15 @@
     <RepositoryUrl>https://github.com/dawn-lc/Pings</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <NeutralLanguage>zh-CN</NeutralLanguage>
+    <SignAssembly>False</SignAssembly>
+    <ErrorReport>none</ErrorReport>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="GitVersion.MsBuild" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Spectre.Console" Version="0.49.2-preview.0.13" />
   </ItemGroup>
 
