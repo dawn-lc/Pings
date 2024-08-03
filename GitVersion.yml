@@ -1,6 +1,7 @@
 ﻿mode: ContinuousDeployment
 branches:
   master:
+    regex: master$
     increment: Patch
 ignore:
   sha: []
