@@ -1,9 +1,12 @@
 name: Release
 on:
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+    branches: 
+      - master
+    paths:
+      - '*.cs'
+      - '*.csproj'
+      - '*.sln'
 jobs:
   build:
     if: github.actor != 'github-actions'
