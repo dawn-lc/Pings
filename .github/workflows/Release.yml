@@ -56,5 +56,5 @@ jobs:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
-        title: "${{ env.SemVer }}"
+        title: "${{ steps.gitversion.outputs.SemVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
