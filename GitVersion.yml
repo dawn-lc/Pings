@@ -12,4 +12,3 @@ commit-message-incrementing: Enabled
 caching:
   enabled: true
   cacheFolder: .gitversion
-  cacheKey: ${{ github.sha }}
