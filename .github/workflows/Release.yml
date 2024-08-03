@@ -50,23 +50,11 @@ jobs:
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
 
-    - name: Get Publish Version
-      id: gitversion-output
-      run: |
-        $version = dotnet-gitversion /output json | ConvertFrom-Json
-        Write-Output "Publish_Version=$version.SemVer" >> $env:GITHUB_ENV
-
-    - name: Save Changes
-      run: |
-        git add .
-        git commit -m "Update version and Release"
-        git push
-
     - name: Create Release
       uses: marvinpinto/action-automatic-releases@latest
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
-        title: "${{ env.Publish_Version }}"
+        title: "${{ env.SemVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
