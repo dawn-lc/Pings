@@ -1,9 +1,12 @@
 name: Release
 on:
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+    branches: 
+      - master
+    paths:
+      - '*.cs'
+      - '*.csproj'
+      - '*.sln'
 jobs:
   build:
     if: github.actor != 'github-actions'
@@ -31,5 +34,5 @@ jobs:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.release_tag }}"
         prerelease: false
-        title: "最新版本"
+        title: "Latest Build"
         files: bin/Release/net8.0/win-x64/publish/Pings.exe
