@@ -41,7 +41,8 @@ jobs:
     - name: Add GitVersion to PATH
       run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
-    - run: if (Test-Path -Path "./build/config.json") {$config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name"} else { New-Item -Path "./build/" -ItemType Directory }
+    - name: Move GitVersion cache to cache
+      run: if (Test-Path -Path "./build/config.json") {$config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/" + $config.GitVersion.Name } else { New-Item -Path "./build/" -ItemType Directory }
 
     - name: Use GitVersion
       id: gitversion
