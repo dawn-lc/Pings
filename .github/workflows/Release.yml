@@ -26,24 +26,30 @@ jobs:
       with:
         fetch-depth: 0
  
-    - run: |
-        git config --global user.name github-actions
-        git config --global user.email github-actions@github.com
-
     - name: Install .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 8.0.x
+
+    - run: |
+        git config --global user.name github-actions
+        git config --global user.email github-actions@github.com
+        Move-Item -Path "./gitversion.json" -Destination "./.git/gitversion_cache/$([BitConverter]::ToString(([System.Security.Cryptography.SHA1]::Create()).ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path './gitversion.json' -Raw)))) -replace '-', '')"
 
     - name: Install GitVersion
       uses: gittools/actions/gitversion/setup@v3.0.0
       with:
         versionSpec: '6.x'
 
-    - name: Determine Version
-      uses: gittools/actions/gitversion/execute@v3.0.0
-      with:
-        useConfigFile: true
+    - name: Install GitVersion
+      run: dotnet tool install -g GitVersion.Tool
+
+    - name: Add GitVersion to PATH
+      run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+    - name: Use GitVersion
+      id: gitversion
+      run: dotnet-gitversion /output file /outputfile gitversion.json /output json /output buildserver /config GitVersion.yml
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
