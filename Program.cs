@@ -74,9 +74,9 @@ namespace Pings
             TasksTable.Centered();
         }
 
-        public void AddHost(string name, string ip, int timeout)
+        public void AddHost(string name, string ip, int timeout = 1000, int maxRecentPackets = 500, int significantDelayThreshold = 20)
         {
-            ICMPTestTask newTask = new(name, ip, timeout, CancellationTokenSource);
+            ICMPTestTask newTask = new(name, ip, timeout, maxRecentPackets, significantDelayThreshold, CancellationTokenSource);
 
             TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text($"{newTask.Delay.TotalMilliseconds}ms"), new Text(newTask.LastLog)]));
 
@@ -127,7 +127,7 @@ namespace Pings
             };
             newTask.RecentLossRateRecorded += (task) =>
             {
-                Logging?.Log($"丢包率 {task.RecentLossRate:F2}%");
+               if (task.RecentLossRate > (double)1 / task.MaxRecentPackets)  Logging?.Log($"丢包率 {task.RecentLossRate:F2}%");
 
                 task.LastLog = $"丢包率 {task.RecentLossRate:F2}%";
             };
@@ -138,9 +138,6 @@ namespace Pings
     public class ICMPTestTask
     {
         public static readonly TimeSpan DefaultDelay = TimeSpan.FromMilliseconds(-1);
-        public static readonly TimeSpan SignificantDelayThreshold = TimeSpan.FromMilliseconds(20);
-
-        public const int MaxRecentPackets = 300;
 
         public event Action<ICMPTestTask>? OpenWarning;
         public event Action<ICMPTestTask>? ConfirmWarning;
@@ -150,11 +147,12 @@ namespace Pings
         public event Action<ICMPTestTask>? DelayExceptionOccurred;
         public event Action<ICMPTestTask>? RecentLossRateRecorded;
 
-        public string Name { get; }
-        public string IP { get; }
-
-        public ObservableQueue<string> Warnings { get; set; } = new();
+        public string Name { get; init; }
+        public string IP { get; init; }
+        public int MaxRecentPackets { get; init; }
+        public TimeSpan SignificantDelayThreshold { get; init; }
         public TimeSpan PreviousDelay { get; set; } = DefaultDelay;
+        public ObservableQueue<string> Warnings { get; set; } = new();
         private Queue<IPStatus> RecentPackets { get; set; } = new();
 
         public bool IsWarning => Warnings.Count > 0;
@@ -232,11 +230,13 @@ namespace Pings
                 RecentPackets.Dequeue();
             }
         }
-
-        public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS)
+        public ICMPTestTask(string name, string ip, int timeout, int maxRecentPackets, int significantDelayThreshold, CancellationTokenSource CTS)
         {
             Name = name;
             IP = ip;
+            MaxRecentPackets = maxRecentPackets;
+            SignificantDelayThreshold = TimeSpan.FromMilliseconds(significantDelayThreshold);
+
             Warnings.Enqueued += warning => OpenWarning?.Invoke(this);
             Warnings.Dequeued += warning => ConfirmWarning?.Invoke(this);
 
@@ -278,6 +278,9 @@ namespace Pings
                 }
             }, CTS.Token);
         }
+        public ICMPTestTask(string name, string ip, int timeout, int maxRecentPackets, CancellationTokenSource CTS) : this(name, ip, timeout, maxRecentPackets, 20, CTS) { }
+        public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS) : this(name, ip, timeout, 500, 20, CTS) { }
+        public ICMPTestTask(string name, string ip, CancellationTokenSource CTS) : this(name, ip, 1000, 500, 20, CTS) { }
     }
 
 
