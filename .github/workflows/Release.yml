@@ -43,7 +43,7 @@ jobs:
       run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
     - name: Move GitVersion cache to cache
-      run: if (Test-Path -Path "./build/config.json") {$config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; Write-Output $config.GitVersion ;Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name" } else { New-Item -Path "./build/" -ItemType Directory }
+      run: if (Test-Path -Path "./build/config.json") {$config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; Write-Output $config.GitVersion.Name ;Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name" } else { New-Item -Path "./build/" -ItemType Directory }
 
     - name: Use GitVersion
       id: gitversion
