@@ -34,20 +34,24 @@ jobs:
     - run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
-        $destinationFolderPath="./.git/gitversion_cache/";
-        $hash=[BitConverter]::ToString(([System.Security.Cryptography.SHA1]::Create()).ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path "./GitVersion.yml" -Raw)))) -replace '-','';
-        if(-not (Test-Path -Path $destinationFolderPath)){New-Item -Path $destinationFolderPath -ItemType Directory};
-        Move-Item -Path "./gitversion.json" -Destination "$destinationFilePath/$hash"
-  
+
     - name: Install GitVersion
       run: dotnet tool install -g GitVersion.Tool
 
     - name: Add GitVersion to PATH
       run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
+    - run: if (Test-Path -Path "./build/config.json") {$config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name"}
+
     - name: Use GitVersion
       id: gitversion
       run: dotnet-gitversion /output file /outputfile gitversion.json /output json /output buildserver /config GitVersion.yml
+
+    - run: |
+        $gitversion=Get-ChildItem -Path "./.git/gitversion_cache/" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1;
+        $config = @{ GitVersion = @{ Name = $gitversion.Name } };
+        $config | ConvertTo-Json -Depth 4 | Set-Content -Path "./build/config.json"
+        Move-Item -Path $gitversion.FullName -Destination "./build/gitversion.json"
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
