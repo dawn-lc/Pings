@@ -26,6 +26,9 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Fetch all history
+      run: git fetch --prune --unshallow
+
     - name: Install .NET
       uses: actions/setup-dotnet@v4
       with:
@@ -43,6 +46,8 @@ jobs:
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
+    - name: Publish Linux Binaries
+      run: dotnet publish ./${{ env.Project_Name }}.csproj -r Linux-x64 -c Release --output ./publish/
 
     - name: Create Release
       uses: marvinpinto/action-automatic-releases@latest
@@ -51,4 +56,12 @@ jobs:
         automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
         title: "${{ env.semVer }}"
-        files: ./publish/${{ env.Project_Name }}.exe
+        files: |
+          ./publish/${{ env.Project_Name }}.exe
+          ./publish/${{ env.Project_Name }}
+
+    - name: Save Changes
+      run: |
+        git add .
+        git commit --amend --no-edit
+        git push --force
