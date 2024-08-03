@@ -23,30 +23,19 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
+
     - name: Install .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 8.0.x
-    
-    - name: Install GitVersion
-      run: dotnet tool install -g GitVersion.Tool
 
-    - name: Add GitVersion to PATH
-      run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+    - name: GitTools
+      uses: GitTools/actions@v3.0.0
 
-    - name: Use GitVersion
+    - name: GitVersion
       id: gitversion
-      run: dotnet-gitversion /output json /output buildserver
-    
-    - name: Restore dependencies
-      run: dotnet restore
-    
-    - name: Build
-      run: dotnet build --configuration Release
-    
+      run: gitversion /output json /output buildserver
+
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
 
@@ -56,5 +45,5 @@ jobs:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "${{ env.Release_Tag }}"
         prerelease: false
-        title: "${{ steps.gitversion.outputs.SemVer }}"
+        title: "${{ env.GitVersion_SemVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
