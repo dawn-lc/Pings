@@ -34,12 +34,10 @@ jobs:
     - run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
-        $sourceFilePath="./GitVersion.yml";
         $destinationFolderPath="./.git/gitversion_cache/";
-        $destinationFilePath="$destinationFolderPath/$hash";
-        $hash=[BitConverter]::ToString(([System.Security.Cryptography.SHA1]::Create()).ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path $sourceFilePath -Raw)))) -replace '-','';
+        $hash=[BitConverter]::ToString(([System.Security.Cryptography.SHA1]::Create()).ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path "./GitVersion.yml" -Raw)))) -replace '-','';
         if(-not (Test-Path -Path $destinationFolderPath)){New-Item -Path $destinationFolderPath -ItemType Directory};
-        Move-Item -Path $sourceFilePath -Destination $destinationFilePath
+        Move-Item -Path "./gitversion.json" -Destination "$destinationFilePath/$hash"
   
     - name: Install GitVersion
       run: dotnet tool install -g GitVersion.Tool
