@@ -46,8 +46,7 @@ jobs:
       uses: "marvinpinto/action-automatic-releases@latest"
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "${{ env.release_tag }}"
-        prerelease: true
+        automatic_release_tag: "${{ env.Release_Tag }}"
         title: "${{ env.GitVersion_SemVer }}"
         files: |
           publish/${{ env.Project_Name }}.exe
