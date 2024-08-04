@@ -21,11 +21,18 @@ jobs:
       Solution_Name: Pings.sln
       Release_Tag: latest
     steps:
+
     - name: Checkout
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
- 
+
+    - name: Debug Git Info
+      run: |
+        git fetch --all --tags
+        git log --graph --oneline --all
+        git tag
+
     - name: Install .NET
       uses: actions/setup-dotnet@v4
       with:
@@ -35,12 +42,6 @@ jobs:
       run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
-        New-Item -Path "./build/" -ItemType Directory -Force
-        New-Item -Path "./.git/gitversion_cache" -ItemType Directory -Force
-        if (Test-Path -Path "./build/config.json") { $config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; }
-
-    - name: Move GitVersion cache to cache
-      run: if (Test-Path -Path "./build/config.json") { Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name" -Force }
 
     - name: Install GitVersion
       run: dotnet tool install -g GitVersion.Tool
@@ -51,6 +52,9 @@ jobs:
     - name: Use GitVersion
       id: gitversion
       run: dotnet-gitversion /output buildserver /config GitVersion.yml
+
+    - name: Debug GitVersion
+      run: gitversion /diag
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
@@ -63,17 +67,3 @@ jobs:
         prerelease: false
         title: "${{ env.GitVersion_SemVer }}"
         files: ./publish/${{ env.Project_Name }}.exe
-
-    
-    - name: Move GitVersion cache to build
-      run: |
-        $gitversion=Get-ChildItem -Path "./.git/gitversion_cache/" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1;
-        $config = @{ GitVersion = @{ Name = $gitversion.Name } };
-        $config | ConvertTo-Json -Depth 8 | Set-Content -Path "./build/config.json"
-        Move-Item -Path $gitversion.FullName -Destination "./build/gitversion.json" -Force
-
-    - name: Save Changes
-      run: |
-        git add .
-        git commit --amend --no-edit
-        git push --force
