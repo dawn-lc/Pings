@@ -66,4 +66,5 @@ jobs:
         title: "${{ env.GitVersion_SemVer }}"
         files: |
           ./${{ env.Project_Name }}.exe
+          ./upx-${{ env.Project_Name }}.exe
 
