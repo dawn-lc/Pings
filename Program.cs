@@ -450,51 +450,52 @@ namespace Pings
             {
                 AnsiConsole.WriteLine($"配置文件 {configPath} 不存在。请创建配置文件后启动！");
                 if (!AnsiConsole.Confirm($"是否创建默认配置文件？")) return;
-                File.WriteAllText(configPath, "本机 127.0.0.1 1000");
+                File.WriteAllText(configPath, "本机 127.0.0.1");
             }
-            ICMPMonitor monitor = new(CTS, Logging);
             try
             {
+                ICMPMonitor monitor = new(CTS, Logging);
                 string[] configLines = File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1).ToArray();
-                Random rng = new();
                 foreach (var line in configLines.Select(line => new ICMPTaskConfig(line.Split(' '))))
                 {
                     monitor.AddHost(new(CTS, line));
-                    Thread.Sleep(rng.Next(100, 500));
+                }
+                AnsiConsole.Clear();
+                AnsiConsole.WriteLine();
+                AnsiConsole.Live(monitor.TasksTable).StartAsync(async ctx =>
+                {
+                    while (!CTS.Token.IsCancellationRequested)
+                    {
+                        monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
+                        ctx.Refresh();
+                        await Task.Delay(TimeSpan.FromSeconds(1), CTS.Token);
+                    }
+                });
+                while (true)
+                {
+                    var key = Console.ReadKey(true);
+                    if (key.Key == ConsoleKey.Q)
+                    {
+                        CTS.Cancel();
+                        break;
+                    }
+                    if (key.Key == ConsoleKey.C)
+                    {
+                        foreach (var task in monitor.Tasks.FindAll(i => i.IsWarning))
+                        {
+                            task.Warnings.Dequeue();
+                        }
+                    }
                 }
             }
             catch (Exception e)
             {
                 AnsiConsole.WriteException(e);
+                AnsiConsole.Write("按任意键退出...");
+                Console.ReadKey(true);
                 return;
             }
-            AnsiConsole.Clear();
-            AnsiConsole.WriteLine();
-            AnsiConsole.Live(monitor.TasksTable).StartAsync(async ctx =>
-            {
-                while (!CTS.Token.IsCancellationRequested)
-                {
-                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
-                    ctx.Refresh();
-                    await Task.Delay(TimeSpan.FromSeconds(1), CTS.Token);
-                }
-            });
-            while (true)
-            {
-                var key = Console.ReadKey(true);
-                if (key.Key == ConsoleKey.Q)
-                {
-                    CTS.Cancel();
-                    break;
-                }
-                if (key.Key == ConsoleKey.C)
-                {
-                    foreach (var task in monitor.Tasks.FindAll(i => i.IsWarning))
-                    {
-                        task.Warnings.Dequeue();
-                    }
-                }
-            }
+
         }
     }
 }
