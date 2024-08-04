@@ -10,11 +10,8 @@ on:
       - '*.yml'
       - '.github/workflows/*.yml'
 jobs:
-  build:
+  Release:
     if: github.actor != 'github-actions'
-    strategy:
-      matrix:
-        configuration: [Release]
     runs-on: windows-latest
     env:
       Project_Name: Pings
@@ -27,43 +24,35 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Debug Git Info
-      run: |
-        git fetch --all --tags
-        git log --graph --oneline --all
-        git tag
-
     - name: Install .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 8.0.x
 
-    - name: Set git config
-      run: |
-        git config --global user.name github-actions
-        git config --global user.email github-actions@github.com
-
     - name: Install GitVersion
-      run: dotnet tool install -g GitVersion.Tool
+      uses: gittools/actions/gitversion/setup@v3.0.0
+      with:
+        versionSpec: '6.x'
 
-    - name: Add GitVersion to PATH
-      run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
-
-    - name: Use GitVersion
-      id: gitversion
-      run: dotnet-gitversion /output buildserver /config GitVersion.yml
-
-    - name: Debug GitVersion
-      run: dotnet-gitversion /diag
+    - name: Determine Version
+      uses: gittools/actions/gitversion/execute@v3.0.0
+      with:
+        useConfigFile: true
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
 
-    - name: Create Release
-      uses: marvinpinto/action-automatic-releases@latest
+    - uses: gittools/actions/gitreleasemanager/create@v3.0.0
+      name: Create release with GitReleaseManager
       with:
-        repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "${{ env.Release_Tag }}"
-        prerelease: false
-        title: "${{ env.GitVersion_SemVer }}"
-        files: ./publish/${{ env.Project_Name }}.exe
+        repository: ${{ env.Project_Name }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        milestone: ${{ env.GitVersion_SemVer }}
+        name: '${{ env.Release_Tag }}'
+        assets: |
+          ./publish/${{ env.Project_Name }}.exe
+
+    - name: Create Git tag And Push
+      run: |
+        git tag -a v${{ env.GitVersion_SemVer }} -m "Github Actions release ${{ env.GitVersion_SemVer }}"
+        git push origin v${{ env.GitVersion_SemVer }}
