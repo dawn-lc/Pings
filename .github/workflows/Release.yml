@@ -41,7 +41,14 @@ jobs:
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
-    
+
+    - name: Create Git tag And Push
+      run: |
+        git config --global user.name github-actions
+        git config --global user.email github-actions@github.com
+        git tag -a v${{ env.GitVersion_SemVer }} -m "Github Actions release ${{ env.GitVersion_SemVer }}"
+        git push origin v${{ env.GitVersion_SemVer }}
+
     - name: 发布新版本
       uses: "marvinpinto/action-automatic-releases@latest"
       with:
@@ -51,9 +58,3 @@ jobs:
         files: |
           publish/${{ env.Project_Name }}.exe
 
-    - name: Create Git tag And Push
-      run: |
-        git config --global user.name github-actions
-        git config --global user.email github-actions@github.com
-        git tag -a v${{ env.GitVersion_SemVer }} -m "Github Actions release ${{ env.GitVersion_SemVer }}"
-        git push origin v${{ env.GitVersion_SemVer }}
