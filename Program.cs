@@ -488,6 +488,10 @@ namespace Pings
                     }
                 }
             }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
             catch (Exception e)
             {
                 AnsiConsole.WriteException(e);
