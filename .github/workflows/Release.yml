@@ -35,9 +35,12 @@ jobs:
       run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
-        New-Item -Path "./build/" -ItemType Directory
-        New-Item -Path "./.git/gitversion_cache" -ItemType Directory
+        New-Item -Path "./build/" -ItemType Directory -Force
+        New-Item -Path "./.git/gitversion_cache" -ItemType Directory -Force
         if (Test-Path -Path "./build/config.json") { $config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; }
+
+    - name: Move GitVersion cache to cache
+      run: if (Test-Path -Path "./build/config.json") { Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name" -Force }
 
     - name: Install GitVersion
       run: dotnet tool install -g GitVersion.Tool
@@ -45,12 +48,9 @@ jobs:
     - name: Add GitVersion to PATH
       run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
-    - name: Move GitVersion cache to cache
-      run: if (Test-Path -Path "./build/config.json") { Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name" }
-
     - name: Use GitVersion
       id: gitversion
-      run: dotnet-gitversion /output json /output buildserver /config GitVersion.yml
+      run: dotnet-gitversion /output buildserver /config GitVersion.yml
 
     - name: Publish Windows Binaries
       run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
@@ -70,7 +70,7 @@ jobs:
         $gitversion=Get-ChildItem -Path "./.git/gitversion_cache/" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1;
         $config = @{ GitVersion = @{ Name = $gitversion.Name } };
         $config | ConvertTo-Json -Depth 8 | Set-Content -Path "./build/config.json"
-        Move-Item -Path $gitversion.FullName -Destination "./build/gitversion.json"
+        Move-Item -Path $gitversion.FullName -Destination "./build/gitversion.json" -Force
 
     - name: Save Changes
       run: |
