@@ -1,7 +1,6 @@
 ﻿using Spectre.Console;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Formats.Tar;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -443,7 +442,8 @@ namespace Pings
 
         static void Main(string[] args)
         {
-            Console.Title = "Pings";
+            string version = FileVersionInfo.GetVersionInfo(Environment.ProcessPath ?? throw new Exception("运行环境异常！")).FileVersion?[..^2] ?? throw new Exception("程序文件异常！");
+            Console.Title = $"Pings {version}";
 
             string configPath = Path.GetFullPath(args.Length > 0 ? args[0] : "config.txt");
             if (!File.Exists(configPath))
