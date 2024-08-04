@@ -40,7 +40,15 @@ jobs:
         useConfigFile: true
 
     - name: Publish Windows Binaries
-      run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./publish/
+      run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./
+
+    - name: Compress binaries
+      uses: crazy-max/ghaction-upx@v3
+      with:
+        version: latest
+        args: --ultra-brute -k -o upx-${{ env.Project_Name }}.exe
+        files: |
+          ./${{ env.Project_Name }}.exe
 
     - name: Create Git tag And Push
       run: |
@@ -57,5 +65,5 @@ jobs:
         prerelease: false
         title: "${{ env.GitVersion_SemVer }}"
         files: |
-          publish/${{ env.Project_Name }}.exe
+          ./${{ env.Project_Name }}.exe
 
