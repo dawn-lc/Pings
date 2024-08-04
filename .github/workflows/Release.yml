@@ -54,5 +54,7 @@ jobs:
 
     - name: Create Git tag And Push
       run: |
+        git config --global user.name github-actions
+        git config --global user.email github-actions@github.com
         git tag -a v${{ env.GitVersion_SemVer }} -m "Github Actions release ${{ env.GitVersion_SemVer }}"
         git push origin v${{ env.GitVersion_SemVer }}
