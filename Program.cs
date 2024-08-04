@@ -1,6 +1,7 @@
 ﻿using Spectre.Console;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Formats.Tar;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -74,10 +75,8 @@ namespace Pings
             TasksTable.Centered();
         }
 
-        public void AddHost(string name, string ip, int timeout = 1000, int maxRecentPackets = 500, int significantDelayThreshold = 20)
+        public void AddHost(ICMPTestTask newTask)
         {
-            ICMPTestTask newTask = new(name, ip, timeout, maxRecentPackets, significantDelayThreshold, CancellationTokenSource);
-
             TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text($"{newTask.Delay.TotalMilliseconds}ms"), new Text(newTask.LastLog)]));
 
             newTask.LastLogChanged += (task) =>
@@ -127,7 +126,7 @@ namespace Pings
             };
             newTask.RecentLossRateRecorded += (task) =>
             {
-               if (task.RecentLossRate > (double)1 / task.MaxRecentPackets)  Logging?.Log($"丢包率 {task.RecentLossRate:F2}%");
+                if (task.RecentLossRate > (double)1 / task.MaxRecentPackets) Logging?.Log($"丢包率 {task.RecentLossRate:F2}%");
 
                 task.LastLog = $"丢包率 {task.RecentLossRate:F2}%";
             };
@@ -230,7 +229,7 @@ namespace Pings
                 RecentPackets.Dequeue();
             }
         }
-        public ICMPTestTask(string name, string ip, int timeout, int maxRecentPackets, int significantDelayThreshold, CancellationTokenSource CTS)
+        public ICMPTestTask(CancellationTokenSource CTS, string name, string ip, int timeout, int maxRecentPackets, int significantDelayThreshold)
         {
             Name = name;
             IP = ip;
@@ -278,9 +277,13 @@ namespace Pings
                 }
             }, CTS.Token);
         }
-        public ICMPTestTask(string name, string ip, int timeout, int maxRecentPackets, CancellationTokenSource CTS) : this(name, ip, timeout, maxRecentPackets, 20, CTS) { }
-        public ICMPTestTask(string name, string ip, int timeout, CancellationTokenSource CTS) : this(name, ip, timeout, 255, 20, CTS) { }
-        public ICMPTestTask(string name, string ip, CancellationTokenSource CTS) : this(name, ip, 1000, 255, 20, CTS) { }
+        public ICMPTestTask(CancellationTokenSource CTS, ICMPTaskConfig config) : this(CTS, config.Name, config.IP, config.Timeout, config.MaxRecentPackets, config.SignificantDelayThreshold) { }
+        public ICMPTestTask(CancellationTokenSource CTS, string name, string ip, int timeout, int maxRecentPackets) : this(CTS, name, ip, timeout, maxRecentPackets, 20) { }
+        public ICMPTestTask(CancellationTokenSource CTS, string name, string ip, int timeout) : this(CTS, name, ip, timeout, 255, 20) { }
+        public ICMPTestTask(CancellationTokenSource CTS, string name, string ip) : this(CTS, name, ip, 1000, 255, 20) { }
+        public ICMPTestTask(CancellationTokenSource CTS, string name, string ip, int? timeout = 1000, int? maxRecentPackets = 255, int? significantDelayThreshold = 20) : this(CTS, name, ip, timeout ?? 1000, maxRecentPackets ?? 255, significantDelayThreshold ?? 20) { }
+        public ICMPTestTask(CancellationTokenSource CTS, string name, string ip, int? timeout = 1000, int? maxRecentPackets = 255) : this(CTS, name, ip, timeout ?? 1000, maxRecentPackets ?? 255) { }
+        public ICMPTestTask(CancellationTokenSource CTS, string name, string ip, int? timeout = 1000) : this(CTS, name, ip, timeout ?? 1000) { }
     }
 
 
@@ -346,19 +349,98 @@ namespace Pings
             GC.SuppressFinalize(this);
         }
     }
+    public struct ICMPTaskConfig
+    {
+        private string name;
+        private string ip;
+        private int? timeout;
+        private int? maxRecentPackets;
+        private int? significantDelayThreshold;
+
+        public string Name
+        {
+            get => name ?? throw new ArgumentException("Invalid domain name.");
+            set
+            {
+                if (!IsValidDomainName(value))
+                    throw new ArgumentException($"Invalid domain name \"{value}\".");
+                name = value;
+            }
+        }
+
+        public string IP
+        {
+            get => ip;
+            set
+            {
+                if (!IsValidIP(value))
+                    throw new ArgumentException($"Invalid IP address \"{value}\".");
+                ip = value;
+            }
+        }
+
+        public int Timeout
+        {
+            get => timeout ?? 1000;
+            set
+            {
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(Timeout), "Timeout must be non-negative.");
+                timeout = value;
+            }
+        }
+
+        public int MaxRecentPackets
+        {
+            get => maxRecentPackets ?? 255;
+            set
+            {
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(MaxRecentPackets), "MaxRecentPackets must be non-negative.");
+                maxRecentPackets = value;
+            }
+        }
+
+        public int SignificantDelayThreshold
+        {
+            get => significantDelayThreshold ?? 20;
+            set
+            {
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(SignificantDelayThreshold), "SignificantDelayThreshold must be non-negative.");
+                significantDelayThreshold = value;
+            }
+        }
+
+        public ICMPTaskConfig(params string[] raw)
+        {
+            if (raw.Length < 1)
+                throw new ArgumentException("A valid name is required.");
+            name = raw[0];
+            if (raw.Length < 2)
+                throw new ArgumentException("A valid IP is required.");
+            ip = raw[1];
+            if (raw.Length > 2 && int.TryParse(raw[2], out int parsedTimeout)) Timeout = parsedTimeout;
+            if (raw.Length > 3 && int.TryParse(raw[3], out int parsedMaxRecentPackets)) MaxRecentPackets = parsedMaxRecentPackets;
+            if (raw.Length > 4 && int.TryParse(raw[4], out int parsedSignificantDelayThreshold)) SignificantDelayThreshold = parsedSignificantDelayThreshold;
+        }
+
+        private static bool IsValidIP(string ip)
+        {
+            return IPAddress.TryParse(ip, out _);
+        }
+
+        private static bool IsValidDomainName(string name)
+        {
+            return Uri.CheckHostName(name) != UriHostNameType.Unknown;
+        }
+    }
 
     internal class Program
     {
         private static CancellationTokenSource CTS { get; set; } = new();
         private static Logging Logging { get; set; } = new("Pings.log");
-        static bool IsValidIP(string ip)
-        {
-            return IPAddress.TryParse(ip, out _);
-        }
-        static bool IsValidDomainName(string name)
-        {
-            return Uri.CheckHostName(name) != UriHostNameType.Unknown;
-        }
+
         static void Main(string[] args)
         {
             Console.Title = "Pings";
@@ -370,25 +452,21 @@ namespace Pings
                 if (!AnsiConsole.Confirm($"是否创建默认配置文件？")) return;
                 File.WriteAllText(configPath, "本机 127.0.0.1 1000");
             }
-
             ICMPMonitor monitor = new(CTS, Logging);
-            string[] configLines = File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1).ToArray();
-            Random rng = new();
-            foreach (var line in configLines)
+            try
             {
-                var parts = line.Split(' ');
-                if (!IsValidIP(parts[1]) && !IsValidDomainName(parts[1]))
+                string[] configLines = File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1).ToArray();
+                Random rng = new();
+                foreach (var line in configLines.Select(line => new ICMPTaskConfig(line.Split(' '))))
                 {
-                    AnsiConsole.WriteLine($"无效的IP地址或域名：{parts[1]}");
-                    return;
+                    monitor.AddHost(new(CTS, line));
+                    Thread.Sleep(rng.Next(50, 100));
                 }
-                int timeout = 1000;
-                if (parts.Length > 2 && Convert.ToInt32(parts[2]) > 0)
-                {
-                    timeout = Convert.ToInt32(parts[2]);
-                }
-                monitor.AddHost(parts[0], parts[1], timeout);
-                Thread.Sleep(rng.Next(50, 100));
+            }
+            catch (Exception e)
+            {
+                AnsiConsole.WriteException(e);
+                return;
             }
             AnsiConsole.Clear();
             AnsiConsole.WriteLine();
@@ -396,7 +474,7 @@ namespace Pings
             {
                 while (!CTS.Token.IsCancellationRequested)
                 {
-                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测"); 
+                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
                     ctx.Refresh();
                     await Task.Delay(TimeSpan.FromSeconds(1), CTS.Token);
                 }
