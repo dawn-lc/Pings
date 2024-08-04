@@ -460,7 +460,7 @@ namespace Pings
                 foreach (var line in configLines.Select(line => new ICMPTaskConfig(line.Split(' '))))
                 {
                     monitor.AddHost(new(CTS, line));
-                    Thread.Sleep(rng.Next(50, 100));
+                    Thread.Sleep(rng.Next(100, 500));
                 }
             }
             catch (Exception e)
