@@ -35,6 +35,9 @@ jobs:
       run: |
         git config --global user.name github-actions
         git config --global user.email github-actions@github.com
+        New-Item -Path "./build/" -ItemType Directory
+        New-Item -Path "./.git/gitversion_cache" -ItemType Directory
+        if (Test-Path -Path "./build/config.json") { $config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; }
 
     - name: Install GitVersion
       run: dotnet tool install -g GitVersion.Tool
@@ -43,7 +46,7 @@ jobs:
       run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
     - name: Move GitVersion cache to cache
-      run: if (Test-Path -Path "./build/config.json") {$config = Get-Content -Path "./build/config.json" -Raw | ConvertFrom-Json; Write-Output $config.GitVersion.Name ;Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name" } else { New-Item -Path "./build/" -ItemType Directory }
+      run: if (Test-Path -Path "./build/config.json") { Move-Item -Path "./build/gitversion.json" -Destination "./.git/gitversion_cache/$config.GitVersion.Name" }
 
     - name: Use GitVersion
       id: gitversion
