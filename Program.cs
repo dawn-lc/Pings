@@ -69,7 +69,7 @@ namespace Pings
             Logging = logging;
             Tasks = [];
             TaskMap = [];
-            TasksTable = new() { Caption = new TableTitle("确认警告(C) / 退出(Q)") };
+            TasksTable = new() { Caption = new TableTitle("当前丢包(L) / 确认警告(C) / 退出(Q)") };
             TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "警告/日志");
             TasksTable.Centered();
         }
@@ -478,6 +478,13 @@ namespace Pings
                     {
                         CTS.Cancel();
                         break;
+                    }
+                    if (key.Key == ConsoleKey.L)
+                    {
+                        foreach (var task in monitor.Tasks.FindAll(i => !i.IsWarning))
+                        {
+                            task.LastLog = $"丢包率 {task.RecentLossRate:F2}%";
+                        }
                     }
                     if (key.Key == ConsoleKey.C)
                     {
