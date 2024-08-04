@@ -5,7 +5,6 @@ branches:
     increment: Patch
 ignore:
   sha: []
-next-version: 1.0.0
 assembly-versioning-scheme: MajorMinorPatch
 assembly-file-versioning-scheme: MajorMinorPatch
 commit-message-incrementing: Enabled
