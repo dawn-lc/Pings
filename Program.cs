@@ -260,6 +260,7 @@ namespace Pings
                     {
                         State = IPStatus.Unknown;
                         Delay = DefaultDelay;
+                        RecentLossRateRecorded?.Invoke(this);
                     }
 
                     UpdateRecentPackets(State);

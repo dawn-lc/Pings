@@ -28,6 +28,8 @@
     <NeutralLanguage>zh-CN</NeutralLanguage>
     <SignAssembly>False</SignAssembly>
     <ErrorReport>none</ErrorReport>
+	<IlcGenerateMstatFile>true</IlcGenerateMstatFile>
+	<IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
   </PropertyGroup>
 
   <ItemGroup>
