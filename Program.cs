@@ -112,7 +112,7 @@ namespace Pings
             {
                 Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(int)task.Delay.TotalMilliseconds}ms");
 
-                TasksTable.Rows.Update(TaskMap[task.IP], 2, new Text(task.State.ToChineseString()));
+                TasksTable.Rows.Update(TaskMap[task.IP], 2, task.State == IPStatus.Success ? new Text(task.State.ToChineseString()) : new Text(task.State.ToChineseString(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
 
                 task.LastLog = $"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ";
                 if (task.State != IPStatus.Success) task.Warnings.Enqueue($"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
