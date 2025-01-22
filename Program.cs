@@ -4,24 +4,90 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
+using System.Threading.Channels;
+
 namespace Pings
 {
-    public class ObservableQueue<T> : Queue<T>
+    public class ObservableQueue<T> : IDisposable
     {
+        public bool IsBounded { get; init; } = false;
+        private readonly Channel<T> _channel;
+        private bool _disposed;
+
+        public ObservableQueue(ChannelOptions? options = null, int? capacity = null)
+        {
+            if (options is null && capacity is null)
+            {
+                _channel = Channel.CreateUnbounded<T>();
+                return;
+            }
+            if (options is null && capacity is not null && capacity > 0)
+            {
+                _channel = Channel.CreateBounded<T>((int)capacity);
+                IsBounded = true;
+                return;
+            }
+            if (options is null && capacity is not null && capacity < 0)
+                throw new ArgumentException("Queue type is bounded, but the capacity parameter less than zero.", nameof(capacity));
+
+            if (options is BoundedChannelOptions boundedOptions)
+            {
+                _channel = Channel.CreateBounded<T>(boundedOptions);
+                IsBounded = true;
+            }
+            else if (options is UnboundedChannelOptions unboundedOptions)
+            {
+                _channel = Channel.CreateUnbounded<T>(unboundedOptions);
+            }
+            else
+            {
+                throw new ArgumentNullException(nameof(options), "Unable to confirm queue type.");
+            }
+        }
+        public ObservableQueue() : this(null, null) { }
+        public ObservableQueue(int capacity) : this(null, capacity) { }
+        public ObservableQueue(ChannelOptions options) : this(options, null) { }
+
+
         public event Action<T>? Enqueued;
         public event Action<T>? Dequeued;
-        public new void Enqueue(T item)
+
+        public async Task EnqueueAsync(T item)
         {
-            base.Enqueue(item);
+            ObjectDisposedException.ThrowIf(_disposed, nameof(ObservableQueue<T>));
+            await _channel.Writer.WriteAsync(item);
             Enqueued?.Invoke(item);
         }
-        public new T Dequeue()
+
+        public async Task<T> DequeueAsync()
         {
-            T item = base.Dequeue();
+            ObjectDisposedException.ThrowIf(_disposed, nameof(ObservableQueue<T>));
+            T item = await _channel.Reader.ReadAsync();
             Dequeued?.Invoke(item);
             return item;
         }
+
+        public int Count => _channel.Reader.Count;
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _channel.Writer.Complete();
+                }
+                _disposed = true;
+            }
+        }
     }
+
     public static class IPStatusExtensions
     {
         public static string ToChineseString(this IPStatus status)
@@ -69,7 +135,7 @@ namespace Pings
             Logging = logging;
             Tasks = [];
             TaskMap = [];
-            TasksTable = new() { Caption = new TableTitle("当前丢包(L) / 确认警告(C) / 退出(Q)") };
+            TasksTable = new() { Caption = new TableTitle("确认警告(C) / 退出(Q)") };
             TasksTable.AddColumns("名称", "IP/域名", "状态", "延迟", "警告/日志");
             TasksTable.Centered();
         }
@@ -89,13 +155,13 @@ namespace Pings
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 3, new Text($"{(int)task.Delay.TotalMilliseconds}ms"));
             };
-            newTask.OpenWarning += (task) =>
+            newTask.OpenWarning += async (task) =>
             {
                 Logging?.Log($"{task.Name}({task.IP}) 触发警告 当前状态：{task.State.ToChineseString()}");
 
-                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.Warnings.Peek(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
+                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(await task.Warnings.DequeueAsync(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
             };
-            newTask.ConfirmWarning += (task) =>
+            newTask.ConfirmWarning += async (task) =>
             {
                 if (!task.IsWarning)
                 {
@@ -105,17 +171,17 @@ namespace Pings
                 }
                 else
                 {
-                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.Warnings.Peek(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
+                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(await task.Warnings.DequeueAsync(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
                 }
             };
-            newTask.StatusChanged += (task) =>
+            newTask.StatusChanged += async (task) =>
             {
                 Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()} {(int)task.Delay.TotalMilliseconds}ms");
 
                 TasksTable.Rows.Update(TaskMap[task.IP], 2, task.State == IPStatus.Success ? new Text(task.State.ToChineseString()) : new Text(task.State.ToChineseString(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
 
                 task.LastLog = $"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ";
-                if (task.State != IPStatus.Success) task.Warnings.Enqueue($"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
+                if (task.State != IPStatus.Success) await task.Warnings.EnqueueAsync($"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
             };
             newTask.DelayExceptionOccurred += (task) =>
             {
@@ -123,12 +189,7 @@ namespace Pings
 
                 task.LastLog = $"延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
             };
-            newTask.RecentLossRateRecorded += (task) =>
-            {
-                if (task.RecentLossRate > (double)1 / task.MaxRecentPackets) Logging?.Log($"丢包率 {task.RecentLossRate:F2}%");
-
-                task.LastLog = $"丢包率 {task.RecentLossRate:F2}%";
-            };
+            
             Tasks.Add(newTask);
         }
     }
@@ -143,18 +204,15 @@ namespace Pings
         public event Action<ICMPTestTask>? StatusChanged;
         public event Action<ICMPTestTask>? DelayChanged;
         public event Action<ICMPTestTask>? DelayExceptionOccurred;
-        public event Action<ICMPTestTask>? RecentLossRateRecorded;
 
         public string Name { get; init; }
         public string IP { get; init; }
         public int MaxRecentPackets { get; init; }
         public TimeSpan SignificantDelayThreshold { get; init; }
         public TimeSpan PreviousDelay { get; set; } = DefaultDelay;
-        public ObservableQueue<string> Warnings { get; set; } = new();
-        private Queue<IPStatus> RecentPackets { get; set; } = new();
-
+        public ObservableQueue<string> Warnings { get; set; }
+        private ObservableQueue<IPStatus> RecentPackets { get; set; }
         public bool IsWarning => Warnings.Count > 0;
-        public double RecentLossRate => RecentPackets.Count == 0 ? 0 : (double)RecentPackets.Count(status => status != IPStatus.Success) / RecentPackets.Count * 100;
 
         private string? lastLog;
         public string LastLog
@@ -220,20 +278,16 @@ namespace Pings
                 && Delay > PreviousDelay
                 && (Delay - PreviousDelay).Duration() > SignificantDelayThreshold;
         }
-        private void UpdateRecentPackets(IPStatus state)
-        {
-            RecentPackets.Enqueue(state);
-            if (RecentPackets.Count > MaxRecentPackets)
-            {
-                RecentPackets.Dequeue();
-            }
-        }
+
         public ICMPTestTask(CancellationTokenSource CTS, string name, string ip, int timeout, int maxRecentPackets, int significantDelayThreshold)
         {
             Name = name;
             IP = ip;
             MaxRecentPackets = maxRecentPackets;
             SignificantDelayThreshold = TimeSpan.FromMilliseconds(significantDelayThreshold);
+
+            Warnings = new();
+            RecentPackets = new(maxRecentPackets);
 
             Warnings.Enqueued += warning => OpenWarning?.Invoke(this);
             Warnings.Dequeued += warning => ConfirmWarning?.Invoke(this);
@@ -251,24 +305,22 @@ namespace Pings
                         stopwatch.Restart();
                         reply = ping.Send(IP, timeout);
                         stopwatch.Stop();
-                        State = reply.Status;
                         Delay = State == IPStatus.Success
                             ? TimeSpan.FromMilliseconds(reply.RoundtripTime)
                             : DefaultDelay;
+                        State = reply.Status;
                     }
                     catch
                     {
-                        State = IPStatus.Unknown;
                         Delay = DefaultDelay;
-                        RecentLossRateRecorded?.Invoke(this);
+                        State = IPStatus.Unknown;
                     }
 
-                    UpdateRecentPackets(State);
+                    await RecentPackets.EnqueueAsync(State);
 
                     pingCounter++;
                     if (pingCounter == MaxRecentPackets)
                     {
-                        RecentLossRateRecorded?.Invoke(this);
                         pingCounter = 0;
                     }
 
@@ -356,6 +408,8 @@ namespace Pings
         private int? timeout;
         private int? maxRecentPackets;
         private int? significantDelayThreshold;
+        private double? packetLossDuration;
+        private int? packetLossCount;
 
         public string Name
         {
@@ -411,6 +465,26 @@ namespace Pings
                 significantDelayThreshold = value;
             }
         }
+        public TimeSpan PacketLossDuration
+        {
+            get => TimeSpan.FromSeconds(packetLossDuration ?? (Timeout / 1000) * 30);
+            set
+            {
+                if (value.TotalMilliseconds < Timeout)
+                    throw new ArgumentOutOfRangeException(nameof(PacketLossDuration), $"PacketLossDuration must be greater than {nameof(Timeout)}.");
+                packetLossDuration = value.TotalSeconds;
+            }
+        }
+        public int PacketLossCount
+        {
+            get => packetLossCount ?? 5;
+            set
+            {
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(PacketLossCount), "PacketLossCount must be non-negative.");
+                packetLossCount = value;
+            }
+        }
 
         public ICMPTaskConfig(params string[] raw)
         {
@@ -423,6 +497,8 @@ namespace Pings
             if (raw.Length > 2 && int.TryParse(raw[2], out int parsedTimeout)) Timeout = parsedTimeout;
             if (raw.Length > 3 && int.TryParse(raw[3], out int parsedMaxRecentPackets)) MaxRecentPackets = parsedMaxRecentPackets;
             if (raw.Length > 4 && int.TryParse(raw[4], out int parsedSignificantDelayThreshold)) SignificantDelayThreshold = parsedSignificantDelayThreshold;
+            if (raw.Length > 5 && double.TryParse(raw[5], out double parsedPacketLossDuration)) PacketLossDuration = TimeSpan.FromSeconds(parsedPacketLossDuration);
+            if (raw.Length > 6 && int.TryParse(raw[6], out int parsedPacketLossCount)) PacketLossCount = parsedPacketLossCount;
         }
 
         private static bool IsValidIP(string ip)
@@ -457,9 +533,9 @@ namespace Pings
             {
                 ICMPMonitor monitor = new(CTS, Logging);
                 string[] configLines = File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1).ToArray();
-                foreach (var line in configLines.Select(line => new ICMPTaskConfig(line.Split(' '))))
+                foreach (var item in configLines.Select(line => new ICMPTaskConfig(line.Split(' '))))
                 {
-                    monitor.AddHost(new(CTS, line));
+                    monitor.AddHost(new(CTS, item));
                 }
                 AnsiConsole.Clear();
                 AnsiConsole.WriteLine();
@@ -480,18 +556,11 @@ namespace Pings
                         CTS.Cancel();
                         break;
                     }
-                    if (key.Key == ConsoleKey.L)
-                    {
-                        foreach (var task in monitor.Tasks.FindAll(i => !i.IsWarning))
-                        {
-                            task.LastLog = $"丢包率 {task.RecentLossRate:F2}%";
-                        }
-                    }
                     if (key.Key == ConsoleKey.C)
                     {
                         foreach (var task in monitor.Tasks.FindAll(i => i.IsWarning))
                         {
-                            task.Warnings.Dequeue();
+                            _ = task.Warnings.DequeueAsync();
                         }
                     }
                 }
