@@ -539,7 +539,7 @@ namespace Pings
                 }
                 AnsiConsole.Clear();
                 AnsiConsole.WriteLine();
-                AnsiConsole.Live(monitor.TasksTable).StartAsync(async ctx =>
+                Task display = AnsiConsole.Live(monitor.TasksTable).StartAsync(async ctx =>
                 {
                     while (!CTS.Token.IsCancellationRequested)
                     {
