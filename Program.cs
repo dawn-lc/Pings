@@ -189,7 +189,7 @@ namespace Pings
 
                 task.LastLog = $"延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
             };
-            
+
             Tasks.Add(newTask);
         }
     }
@@ -516,7 +516,6 @@ namespace Pings
     {
         private static CancellationTokenSource CTS { get; set; } = new();
         private static Logging Logging { get; set; } = new("Pings.log");
-
         static void Main(string[] args)
         {
             string version = FileVersionInfo.GetVersionInfo(Environment.ProcessPath ?? throw new Exception("运行环境异常！")).FileVersion?[..^2] ?? throw new Exception("程序文件异常！");
@@ -532,7 +531,7 @@ namespace Pings
             try
             {
                 ICMPMonitor monitor = new(CTS, Logging);
-                string[] configLines = File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1).ToArray();
+                string[] configLines = [.. File.ReadAllLines(configPath).Select(line => line.Trim()).Where(line => line.Split(' ').Length > 1)];
                 foreach (var item in configLines.Select(line => new ICMPTaskConfig(line.Split(' '))))
                 {
                     monitor.AddHost(new(CTS, item));
@@ -571,8 +570,8 @@ namespace Pings
             }
             catch (Exception e)
             {
-                AnsiConsole.WriteException(e);
-                AnsiConsole.Write("按任意键退出...");
+                AnsiConsole.WriteLine(e.ToString());
+                AnsiConsole.WriteLine($"按任意键退出...");
                 Console.ReadKey(true);
                 return;
             }
