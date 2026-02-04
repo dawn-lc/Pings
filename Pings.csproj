@@ -37,6 +37,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="MailKit" Version="4.14.1" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
   </ItemGroup>
 
