@@ -60,11 +60,4 @@ jobs:
         git push origin v${{ env.GitVersion_SemVer }}
   
     - name: 发布正式版本
-      run: |
-        gh release create ${{ env.release_tag }} \
-          ./${{ env.Project_Name }}.exe \
-          ./upx-${{ env.Project_Name }}.exe \
-          --target master \
-          --latest \
-          --title "${{ env.GitVersion_SemVer }}" \
-          --generate-notes
+      run: gh release create ${{ env.release_tag }} ./${{ env.Project_Name }}.exe ./upx-${{ env.Project_Name }}.exe --target master --latest --title "${{ env.GitVersion_SemVer }}" --generate-notes
