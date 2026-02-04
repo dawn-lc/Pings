@@ -6,7 +6,7 @@
 
 前往Releases页面下载
 
-Pings.exe 为.NET8原生AOT编译版本
+Pings.exe 为.NET10原生AOT编译版本
 
 upx-Pings.exe 为使用UPX压缩后的版本
 
@@ -35,3 +35,5 @@ example3 8.8.8.8
 Pings.exe <配置文件路径>
 ```
 如果没有指定配置文件路径，将默认使用当前目录下的 config.txt 文件。
+
+1.0.17版本后采用json作为配置文件格式，程序会自动读取旧版本配置文件进行升级。
