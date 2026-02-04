@@ -8,6 +8,9 @@ on:
       - '*.cs'
       - '*.csproj'
       - '*.sln'
+env:
+  release_tag: latest
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 jobs:
   Release:
     if: github.actor != 'github-actions'
@@ -26,7 +29,7 @@ jobs:
     - name: Install .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9
+        dotnet-version: 10
 
     - name: Install GitVersion
       uses: gittools/actions/gitversion/setup@v3.0.0
@@ -39,7 +42,7 @@ jobs:
         useConfigFile: true
 
     - name: Publish Windows Binaries
-      run: dotnet publish ./${{ env.Project_Name }}.csproj -r win-x64 -c Release --output ./
+      run: dotnet publish ./${{ env.Project_Name }}.csproj -f net10.0-windows -r win-x64 -c Release --output ./
 
     - name: Compress binaries
       uses: crazy-max/ghaction-upx@v3
@@ -55,15 +58,13 @@ jobs:
         git config --global user.email github-actions@github.com
         git tag -a v${{ env.GitVersion_SemVer }} -m "Github Actions release ${{ env.GitVersion_SemVer }}"
         git push origin v${{ env.GitVersion_SemVer }}
-
-    - name: 发布新版本
-      uses: "marvinpinto/action-automatic-releases@latest"
-      with:
-        repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "${{ env.Release_Tag }}"
-        prerelease: false
-        title: "${{ env.GitVersion_SemVer }}"
-        files: |
-          ./${{ env.Project_Name }}.exe
-          ./upx-${{ env.Project_Name }}.exe
-
+  
+    - name: 发布正式版本
+      run: |
+        gh release create ${{ env.release_tag }} \
+          ./${{ env.Project_Name }}.exe \
+          ./upx-${{ env.Project_Name }}.exe \
+          --target master \
+          --latest \
+          --title "${{ env.GitVersion_SemVer }}" \
+          --generate-notes
