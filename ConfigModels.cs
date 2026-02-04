@@ -1,3 +1,5 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Pings
@@ -11,7 +13,7 @@ namespace Pings
         /// 监控任务配置列表
         /// </summary>
         [JsonPropertyName("tasks")]
-        public List<ICMPTaskConfigJson> Tasks { get; set; } = new();
+        public List<ICMPTaskConfigJson> Tasks { get; set; } = [];
 
         /// <summary>
         /// 全局配置
@@ -24,6 +26,12 @@ namespace Pings
         /// </summary>
         [JsonPropertyName("logging")]
         public LoggingConfig Logging { get; set; } = new();
+
+        /// <summary>
+        /// 通知配置（Webhook / Email）
+        /// </summary>
+        [JsonPropertyName("notifications")]
+        public NotificationsConfig Notifications { get; set; } = new();
     }
 
     /// <summary>
@@ -126,5 +134,90 @@ namespace Pings
         /// </summary>
         [JsonPropertyName("enableConsoleLog")]
         public bool EnableConsoleLog { get; set; } = true;
+    }
+
+    /// <summary>
+    /// 通知配置（Webhook 与 Email）
+    /// </summary>
+    public class NotificationsConfig
+    {
+        [JsonPropertyName("webhook")]
+        public WebhookConfig Webhook { get; set; } = new();
+
+        [JsonPropertyName("email")]
+        public EmailConfig Email { get; set; } = new();
+    }
+
+    public class WebhookConfig
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = false;
+
+        [JsonPropertyName("url")]
+        public string Url { get; set; } = string.Empty;
+
+        [JsonPropertyName("method")]
+        public string Method { get; set; } = "POST";
+
+        [JsonPropertyName("headers")]
+        public Dictionary<string, string> Headers { get; set; } = [];
+
+        // 认证类型，例如 "Bearer"；如果非空且 authToken 提供，将在请求中添加 Authorization 头
+        [JsonPropertyName("authType")]
+        public string AuthType { get; set; } = string.Empty;
+
+        [JsonPropertyName("authToken")]
+        public string AuthToken { get; set; } = string.Empty;
+    }
+
+    public class EmailConfig
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = false;
+
+        [JsonPropertyName("smtpServer")]
+        public string SmtpServer { get; set; } = string.Empty;
+
+        [JsonPropertyName("port")]
+        public int Port { get; set; } = 25;
+
+        [JsonPropertyName("enableSsl")]
+        public bool EnableSsl { get; set; } = true;
+
+        [JsonPropertyName("username")]
+        public string Username { get; set; } = string.Empty;
+
+        [JsonPropertyName("password")]
+        public string Password { get; set; } = string.Empty;
+
+        [JsonPropertyName("from")]
+        public string From { get; set; } = string.Empty;
+
+        [JsonPropertyName("to")]
+        public List<string> To { get; set; } = [];
+    }
+
+    /// <summary>
+    /// Webhook 通知 payload
+    /// </summary>
+    public class WebhookPayload
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("ip")]
+        public string? IP { get; set; }
+
+        [JsonPropertyName("previousState")]
+        public string? PreviousState { get; set; }
+
+        [JsonPropertyName("state")]
+        public string? State { get; set; }
+
+        [JsonPropertyName("delayMs")]
+        public int? DelayMs { get; set; }
+
+        [JsonPropertyName("timestamp")]
+        public string? Timestamp { get; set; }
     }
 }

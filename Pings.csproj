@@ -1,13 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+	 
+    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
+
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
     <PublishAot>true</PublishAot>
     <OptimizationPreference>Size</OptimizationPreference>
     <PublishTrimmed>true</PublishTrimmed>
     <IsTrimmable>true</IsTrimmable>
+
     <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <StackTraceSupport>false</StackTraceSupport>
@@ -18,25 +23,34 @@
     <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
     <DebuggerSupport>false</DebuggerSupport>
+
     <StartupObject>Pings.Program</StartupObject>
+
     <Authors>dawn-lc</Authors>
     <Company>https://github.com/dawn-lc</Company>
     <PackageProjectUrl>https://github.com/dawn-lc/Pings</PackageProjectUrl>
-    <Copyright>MIT</Copyright>
     <RepositoryUrl>https://github.com/dawn-lc/Pings</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+
     <NeutralLanguage>zh-CN</NeutralLanguage>
-    <SignAssembly>False</SignAssembly>
-    <ErrorReport>none</ErrorReport>
-	<IlcGenerateMstatFile>true</IlcGenerateMstatFile>
-	<IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
+
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <IlcGenerateMstatFile>true</IlcGenerateMstatFile>
+    <IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
+  </PropertyGroup>
+
+  <!-- Release 精简 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="GitVersion.MsBuild" Version="6.5.1">
       <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+
     <PackageReference Include="MailKit" Version="4.14.1" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
   </ItemGroup>

@@ -1,22 +1,36 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Pings
 {
+    [JsonSourceGenerationOptions(WriteIndented = true)]
+    [JsonSerializable(typeof(AppConfig))]
+    [JsonSerializable(typeof(List<ICMPTaskConfigJson>))]
+    [JsonSerializable(typeof(ICMPTaskConfigJson))]
+    [JsonSerializable(typeof(GlobalConfig))]
+    [JsonSerializable(typeof(LoggingConfig))]
+    [JsonSerializable(typeof(NotificationsConfig))]
+    [JsonSerializable(typeof(WebhookConfig))]
+    [JsonSerializable(typeof(EmailConfig))]
+    [JsonSerializable(typeof(WebhookPayload))]
+    internal partial class JsonContext : JsonSerializerContext
+    {
+        private static readonly Lazy<JsonContext> _relaxed = new(() =>
+            new JsonContext(new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            }));
+
+        public static JsonContext Relaxed => _relaxed.Value;
+    }
+
     /// <summary>
     /// JSON配置文件加载器（AOT兼容）
     /// </summary>
     public static class ConfigLoader
     {
-        private static readonly JsonSerializerOptions _jsonOptions = new()
-        {
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            // 为AOT编译启用源生成
-            TypeInfoResolver = JsonContext.Default
-        };
-
         /// <summary>
         /// 从文件加载配置
         /// </summary>
@@ -31,9 +45,8 @@ namespace Pings
 
             try
             {
-                string jsonContent = File.ReadAllText(configPath);
-                return JsonSerializer.Deserialize(jsonContent, JsonContext.Default.AppConfig)
-                    ?? throw new JsonException("配置文件内容为空或格式错误");
+                byte[] jsonBytes = File.ReadAllBytes(configPath);
+                return JsonSerializer.Deserialize(jsonBytes, JsonContext.Relaxed.AppConfig) ?? throw new JsonException("配置文件内容为空或格式错误");
             }
             catch (JsonException ex)
             {
@@ -50,7 +63,7 @@ namespace Pings
         {
             try
             {
-                string jsonContent = JsonSerializer.Serialize(config, JsonContext.Default.AppConfig);
+                string jsonContent = JsonSerializer.Serialize(config, JsonContext.Relaxed.AppConfig);
                 File.WriteAllText(configPath, jsonContent);
             }
             catch (Exception ex)
@@ -62,178 +75,94 @@ namespace Pings
         /// <summary>
         /// 创建默认配置文件
         /// </summary>
-        /// <param name="configPath">配置文件路径</param>
         public static void CreateDefaultConfig(string configPath)
         {
             var defaultConfig = new AppConfig
             {
-                Tasks = new List<ICMPTaskConfigJson>
-                {
+                Tasks =
+                [
                     new ICMPTaskConfigJson
                     {
-                        Name = "本机",
-                        IP = "127.0.0.1",
-                        Timeout = 1000,
-                        MaxRecentPackets = 255,
-                        SignificantDelayThreshold = 20,
-                        PacketLossDuration = 30.0,
-                        PacketLossCount = 5
-                    },
-                    new ICMPTaskConfigJson
-                    {
-                        Name = "网关",
-                        IP = "192.168.1.1",
-                        Timeout = 1000,
-                        MaxRecentPackets = 255,
-                        SignificantDelayThreshold = 20,
-                        PacketLossDuration = 30.0,
-                        PacketLossCount = 5
-                    },
-                    new ICMPTaskConfigJson
-                    {
-                        Name = "DNS服务器",
+                        Name = "Google DNS",
                         IP = "8.8.8.8",
                         Timeout = 1000,
                         MaxRecentPackets = 255,
                         SignificantDelayThreshold = 20,
                         PacketLossDuration = 30.0,
                         PacketLossCount = 5
+                    },
+                    new ICMPTaskConfigJson
+                    {
+                        Name = "Cloudflare DNS",
+                        IP = "1.1.1.1",
+                        Timeout = 1000,
+                        MaxRecentPackets = 255,
+                        SignificantDelayThreshold = 20,
+                        PacketLossDuration = 30.0,
+                        PacketLossCount = 5
                     }
-                },
-                Global = new GlobalConfig
-                {
-                    AutoConfirmWarningInterval = 0,
-                    UiRefreshInterval = 1000,
-                    EnableVerboseLogging = false
-                },
-                Logging = new LoggingConfig
-                {
-                    LogFilePath = "Pings.log",
-                    MaxLogFileSize = 10,
-                    MaxLogFiles = 5,
-                    EnableConsoleLog = true
-                }
+                ],
+                Logging = new LoggingConfig { LogFilePath = "Pings.log" },
+                Notifications = new NotificationsConfig()
             };
 
             SaveConfig(defaultConfig, configPath);
         }
 
         /// <summary>
-        /// 将JSON配置转换为ICMPTaskConfig结构
+        /// 验证配置
         /// </summary>
-        /// <param name="jsonConfig">JSON配置</param>
-        /// <returns>ICMPTaskConfig结构</returns>
+        public static (bool IsValid, string ErrorMessage) ValidateConfig(AppConfig config)
+        {
+            if (config?.Tasks == null || config.Tasks.Count == 0)
+                return (false, "至少需要一个监控任务");
+
+            foreach (var task in config.Tasks)
+            {
+                if (string.IsNullOrWhiteSpace(task.Name))
+                    return (false, "任务名称不能为空");
+                if (string.IsNullOrWhiteSpace(task.IP))
+                    return (false, "IP地址不能为空");
+            }
+
+            // 验证邮件配置
+            if (config.Notifications?.Email?.Enabled ?? false)
+            {
+                var email = config.Notifications.Email;
+
+                if (string.IsNullOrWhiteSpace(email.SmtpServer))
+                    return (false, "邮件SMTP服务器地址不能为空");
+
+                if (email.Port <= 0 || email.Port > 65535)
+                    return (false, "邮件SMTP端口号无效(1-65535)");
+
+                if (string.IsNullOrWhiteSpace(email.From))
+                    return (false, "邮件发件人地址不能为空");
+
+                if (email.To?.Count == 0)
+                    return (false, "邮件收件人地址不能为空");
+
+                if (!string.IsNullOrWhiteSpace(email.Username) && string.IsNullOrWhiteSpace(email.Password))
+                    return (false, "邮件需要认证但密码为空");
+            }
+
+            return (true, "");
+        }
+
+        /// <summary>
+        /// 将JSON任务配置转换为 ICMPTaskConfig
+        /// </summary>
         public static ICMPTaskConfig ToICMPTaskConfig(ICMPTaskConfigJson jsonConfig)
         {
             return new ICMPTaskConfig(
                 jsonConfig.Name,
                 jsonConfig.IP,
-                jsonConfig.Timeout.ToString(),
-                jsonConfig.MaxRecentPackets.ToString(),
-                jsonConfig.SignificantDelayThreshold.ToString(),
-                jsonConfig.PacketLossDuration.ToString(),
-                jsonConfig.PacketLossCount.ToString()
+                jsonConfig.Timeout,
+                jsonConfig.MaxRecentPackets,
+                jsonConfig.SignificantDelayThreshold,
+                jsonConfig.PacketLossDuration,
+                jsonConfig.PacketLossCount
             );
         }
-
-        /// <summary>
-        /// 验证配置文件
-        /// </summary>
-        /// <param name="config">应用程序配置</param>
-        /// <returns>验证结果和错误消息</returns>
-        public static (bool IsValid, string ErrorMessage) ValidateConfig(AppConfig config)
-        {
-            if (config == null)
-            {
-                return (false, "配置对象为空");
-            }
-
-            if (config.Tasks == null || config.Tasks.Count == 0)
-            {
-                return (false, "监控任务列表为空");
-            }
-
-            foreach (var task in config.Tasks)
-            {
-                if (string.IsNullOrWhiteSpace(task.Name))
-                {
-                    return (false, "任务名称不能为空");
-                }
-
-                if (string.IsNullOrWhiteSpace(task.IP))
-                {
-                    return (false, $"任务 '{task.Name}' 的IP地址不能为空");
-                }
-
-                if (task.Timeout <= 0)
-                {
-                    return (false, $"任务 '{task.Name}' 的超时时间必须大于0");
-                }
-
-                if (task.MaxRecentPackets <= 0)
-                {
-                    return (false, $"任务 '{task.Name}' 的最大记录数必须大于0");
-                }
-
-                if (task.SignificantDelayThreshold < 0)
-                {
-                    return (false, $"任务 '{task.Name}' 的延迟变化阈值不能为负数");
-                }
-
-                if (task.PacketLossDuration <= 0)
-                {
-                    return (false, $"任务 '{task.Name}' 的丢包持续时间必须大于0");
-                }
-
-                if (task.PacketLossCount <= 0)
-                {
-                    return (false, $"任务 '{task.Name}' 的丢包计数阈值必须大于0");
-                }
-            }
-
-            if (config.Global == null)
-            {
-                return (false, "全局配置为空");
-            }
-
-            if (config.Global.UiRefreshInterval <= 0)
-            {
-                return (false, "界面刷新间隔必须大于0");
-            }
-
-            if (config.Logging == null)
-            {
-                return (false, "日志配置为空");
-            }
-
-            if (string.IsNullOrWhiteSpace(config.Logging.LogFilePath))
-            {
-                return (false, "日志文件路径不能为空");
-            }
-
-            if (config.Logging.MaxLogFileSize <= 0)
-            {
-                return (false, "最大日志文件大小必须大于0");
-            }
-
-            if (config.Logging.MaxLogFiles <= 0)
-            {
-                return (false, "保留的日志文件数量必须大于0");
-            }
-
-            return (true, string.Empty);
-        }
-    }
-
-    /// <summary>
-    /// JSON序列化上下文（AOT必需）
-    /// </summary>
-    [JsonSerializable(typeof(AppConfig))]
-    [JsonSerializable(typeof(List<ICMPTaskConfigJson>))]
-    [JsonSerializable(typeof(ICMPTaskConfigJson))]
-    [JsonSerializable(typeof(GlobalConfig))]
-    [JsonSerializable(typeof(LoggingConfig))]
-    internal partial class JsonContext : JsonSerializerContext
-    {
     }
 }
