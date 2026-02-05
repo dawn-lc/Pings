@@ -39,58 +39,67 @@ namespace Pings
 
         public void AddHost(ICMPTestTask newTask)
         {
-            TaskMap.Add(newTask.IP, TasksTable.Rows.Add([new Text(newTask.Name), new Text(newTask.IP), new Text(newTask.State.ToChineseString()), new Text($"{newTask.Delay.TotalMilliseconds}ms"), new Text(newTask.LastLog)]));
+            Style warningColor = new(Color.Yellow, Color.Red, Decoration.Bold);
+            TaskMap.Add(
+                newTask.IP,
+                TasksTable.Rows.Add([
+                    new Text(newTask.Name),
+                    new Text(newTask.IP),
+                    new Text(newTask.State.ToChineseString()),
+                    new Text($"{newTask.Delay.TotalMilliseconds}ms"),
+                    new Text(newTask.LastLog)
+                ])
+            );
 
-            newTask.LastLogChanged += (task) =>
-            {
-                if (!task.IsWarning)
-                {
-                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog));
-                }
-            };
             newTask.DelayChanged += (task) =>
             {
                 TasksTable.Rows.Update(TaskMap[task.IP], 3, new Text($"{(int)task.Delay.TotalMilliseconds}ms"));
             };
             newTask.OpenWarning += async (task) =>
             {
-                Logging?.Log($"{task.Name}({task.IP}) 触发警告<{task.State.ToChineseString()}>");
+                Logging?.Log($"{task.Name}({task.IP}) 因为 {task.State.ToChineseString()} 触发警告");
 
-                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(await task.Warnings.DequeueAsync(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
+                TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(await task.Warnings.PeekAsync(), warningColor));
             };
             newTask.ConfirmWarning += async (task) =>
             {
-                if (!task.IsWarning)
-                {
-                    Logging?.Log($"{task.Name}({task.IP}) 解除警告<{task.State.ToChineseString()}>");
-
-                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog));
-                }
-                else
-                {
-                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(await task.Warnings.DequeueAsync(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
-                }
+                TasksTable.Rows.Update(TaskMap[task.IP], 4, task.Warnings.Count < 1 ? new Text(task.LastLog) : new Text(await task.Warnings.PeekAsync(), warningColor));
             };
-            newTask.StatusChanged += (task) =>
+            newTask.StatusChanged += async (task) =>
             {
-                Logging?.Log($"{task.Name}({task.IP}) {task.State.ToChineseString()}{(task.State == IPStatus.Success ? $" {(int)task.Delay.TotalMilliseconds}ms" : "")}");
+                string statusName = task.State.ToChineseString();
 
-                TasksTable.Rows.Update(TaskMap[task.IP], 2, task.State == IPStatus.Success ? new Text(task.State.ToChineseString()) : new Text(task.State.ToChineseString(), new Style(Color.Yellow, Color.Red, Decoration.Bold)));
+                IcmpFaultCategory newCategory = task.State.Classify();
+                IcmpFaultCategory previousCategory = task.PreviousState.Classify();
 
-                task.LastLog = $"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ";
-                if (task.State != IPStatus.Success)
+                Logging?.Log($"{task.Name}({task.IP}) {statusName}{(task.State == IPStatus.Success ? $" {(int)task.Delay.TotalMilliseconds}ms" : "")}");
+
+                TasksTable.Rows.Update(TaskMap[task.IP], 2, task.State == IPStatus.Success ? new Text(statusName) : new Text(statusName, warningColor));
+
+                task.LastLog = $"{statusName} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]";
+                if (newCategory != previousCategory)
                 {
-                    _ = task.Warnings.EnqueueAsync($"{task.State.ToChineseString()} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]");
+                    _ = Notifier.NotifyStatusChangeAsync(task);
+
+                    if (newCategory != IcmpFaultCategory.None)
+                    {
+                        await task.Warnings.EnqueueAsync(task.LastLog);
+                    }
                 }
-                _ = Notifier.NotifyStatusChangeAsync(task);
             };
             newTask.DelayExceptionOccurred += (task) =>
             {
-                Logging?.Log($"{task.Name}({task.IP}) 延迟波动<{(int)task.PreviousDelay.TotalMilliseconds}ms → {(int)task.Delay.TotalMilliseconds}ms>");
+                Logging?.Log($"{task.Name}({task.IP}) 延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms>");
 
-                task.LastLog = $"延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms → {(int)task.Delay.TotalMilliseconds}ms";
+                task.LastLog = $"延迟波动 {(int)task.PreviousDelay.TotalMilliseconds}ms -> {(int)task.Delay.TotalMilliseconds}ms";
             };
-
+            newTask.LastLogChanged += (task) =>
+            {
+                if (task.Warnings.Count < 1)
+                {
+                    TasksTable.Rows.Update(TaskMap[task.IP], 4, new Text(task.LastLog));
+                }
+            };
             Tasks.Add(newTask);
         }
     }

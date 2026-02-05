@@ -11,8 +11,14 @@ namespace Pings
     {
         /// <summary>是否是有界队列</summary>
         public bool IsBounded { get; init; } = false;
+
         private readonly Channel<T> _channel;
         private bool _disposed;
+
+        // ===== 新增：队头缓存 =====
+        private T? _cachedHead;
+        private bool _hasCachedHead;
+        private readonly SemaphoreSlim _peekLock = new(1, 1);
 
         /// <summary>
         /// 构造函数
@@ -26,12 +32,14 @@ namespace Pings
                 _channel = Channel.CreateUnbounded<T>();
                 return;
             }
+
             if (options is null && capacity is not null && capacity > 0)
             {
                 _channel = Channel.CreateBounded<T>((int)capacity);
                 IsBounded = true;
                 return;
             }
+
             if (options is null && capacity is not null && capacity < 0)
                 throw new ArgumentException("Queue type is bounded, but the capacity parameter less than zero.", nameof(capacity));
 
@@ -49,15 +57,19 @@ namespace Pings
                 throw new ArgumentNullException(nameof(options), "Unable to confirm queue type.");
             }
         }
+
         /// <summary>默认构造函数，创建无界队列</summary>
         public ObservableQueue() : this(null, null) { }
+
         /// <summary>创建指定容量的有界队列</summary>
         public ObservableQueue(int capacity) : this(null, capacity) { }
+
         /// <summary>使用指定选项创建队列</summary>
         public ObservableQueue(ChannelOptions options) : this(options, null) { }
 
         /// <summary>元素入队时触发的事件</summary>
         public event Action<T>? Enqueued;
+
         /// <summary>元素出队时触发的事件</summary>
         public event Action<T>? Dequeued;
 
@@ -71,13 +83,58 @@ namespace Pings
         /// <summary>异步出队元素</summary>
         public async Task<T> DequeueAsync()
         {
-            T item = await _channel.Reader.ReadAsync();
-            Dequeued?.Invoke(item);
-            return item;
+            await _peekLock.WaitAsync();
+            try
+            {
+                T item;
+
+                // 如果有缓存，优先返回缓存
+                if (_hasCachedHead)
+                {
+                    item = _cachedHead!;
+                    _hasCachedHead = false;
+                    _cachedHead = default!;
+                }
+                else
+                {
+                    item = await _channel.Reader.ReadAsync();
+                }
+
+                Dequeued?.Invoke(item);
+                return item;
+            }
+            finally
+            {
+                _peekLock.Release();
+            }
         }
 
-        /// <summary>队列中元素数量</summary>
-        public int Count => _channel.Reader.Count;
+        /// <summary>
+        /// 查看队头元素（不会移除）
+        /// </summary>
+        public async Task<T> PeekAsync()
+        {
+            await _peekLock.WaitAsync();
+            try
+            {
+                if (_hasCachedHead)
+                    return _cachedHead!;
+
+                // 从 Channel 读取一个元素并缓存
+                var item = await _channel.Reader.ReadAsync();
+                _cachedHead = item;
+                _hasCachedHead = true;
+
+                return item;
+            }
+            finally
+            {
+                _peekLock.Release();
+            }
+        }
+
+        /// <summary>队列中元素数量（包含缓存）</summary>
+        public int Count => _channel.Reader.Count + (_hasCachedHead ? 1 : 0);
 
         /// <summary>释放资源</summary>
         public void Dispose()
@@ -94,6 +151,7 @@ namespace Pings
                 if (disposing)
                 {
                     _channel.Writer.Complete();
+                    _peekLock.Dispose();
                 }
                 _disposed = true;
             }

@@ -38,7 +38,7 @@ namespace Pings
         /// <summary>全局日志记录器</summary>
         private static Logging Logging { get; set; } = new("Pings.log");
 
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             RegisterShutdownEvents();
 
@@ -160,16 +160,10 @@ namespace Pings
             });
         }
 
-        private static void KeyboardLoop(ICMPMonitor monitor)
+        private static async Task KeyboardLoop(ICMPMonitor monitor)
         {
             while (!CTS.IsCancellationRequested)
             {
-                if (!Console.KeyAvailable)
-                {
-                    Thread.Sleep(100);
-                    continue;
-                }
-
                 var key = Console.ReadKey(true);
 
                 if (key.Key == ConsoleKey.Q)
@@ -180,21 +174,16 @@ namespace Pings
 
                 if (key.Key == ConsoleKey.C)
                 {
-                    foreach (var task in monitor.Tasks.FindAll(i => i.IsWarning))
+                    foreach (var task in monitor.Tasks.FindAll(i => i.Warnings.Count > 0))
                         _ = task.Warnings.DequeueAsync();
                 }
 #if DEBUG
                 if (key.Key == ConsoleKey.T)
                 {
-                    // 随机选择一个任务并将其状态设置为IPStatus.Unknown
-                    if (monitor.Tasks.Count > 0)
+                    foreach (var task in monitor.Tasks)
                     {
-                        Random random = new();
-                        int randomIndex = random.Next(0, monitor.Tasks.Count);
-                        var randomTask = monitor.Tasks[randomIndex];
-
-                        // 设置状态为IPStatus.Unknown
-                        randomTask.State = IPStatus.Unknown;
+                        task.State = IPStatus.Unknown;
+                        //await task.Warnings.EnqueueAsync($"Test Warning! {task.Warnings.Count+1}");
                     }
                 }
 #endif

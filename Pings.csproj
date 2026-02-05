@@ -1,58 +1,57 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-	 
-    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
 
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+        <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
 
-    <PublishAot>true</PublishAot>
-    <OptimizationPreference>Size</OptimizationPreference>
-    <PublishTrimmed>true</PublishTrimmed>
-    <IsTrimmable>true</IsTrimmable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
 
-    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
-    <UseSystemResourceKeys>true</UseSystemResourceKeys>
-    <StackTraceSupport>false</StackTraceSupport>
-    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
-    <EventSourceSupport>false</EventSourceSupport>
-    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
-    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
-    <DebuggerSupport>false</DebuggerSupport>
+        <PublishAot>true</PublishAot>
+        <OptimizationPreference>Size</OptimizationPreference>
+        <PublishTrimmed>true</PublishTrimmed>
+        <IsTrimmable>true</IsTrimmable>
 
-    <StartupObject>Pings.Program</StartupObject>
+        <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+        <UseSystemResourceKeys>true</UseSystemResourceKeys>
+        <StackTraceSupport>false</StackTraceSupport>
+        <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+        <EventSourceSupport>false</EventSourceSupport>
+        <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+        <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+        <DebuggerSupport>false</DebuggerSupport>
 
-    <Authors>dawn-lc</Authors>
-    <Company>https://github.com/dawn-lc</Company>
-    <PackageProjectUrl>https://github.com/dawn-lc/Pings</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/dawn-lc/Pings</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
+        <StartupObject>Pings.Program</StartupObject>
 
-    <NeutralLanguage>zh-CN</NeutralLanguage>
+        <Authors>dawn-lc</Authors>
+        <Company>https://github.com/dawn-lc</Company>
+        <PackageProjectUrl>https://github.com/dawn-lc/Pings</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/dawn-lc/Pings</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
 
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <NeutralLanguage>zh-CN</NeutralLanguage>
 
-    <IlcGenerateMstatFile>true</IlcGenerateMstatFile>
-    <IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
-  </PropertyGroup>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-  <!-- Release 精简 -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DebugSymbols>false</DebugSymbols>
-    <DebugType>none</DebugType>
-  </PropertyGroup>
+        <IlcGenerateMstatFile>true</IlcGenerateMstatFile>
+        <IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="GitVersion.MsBuild" Version="6.5.1">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    <!-- Release 精简 -->
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <DebugSymbols>false</DebugSymbols>
+        <DebugType>none</DebugType>
+    </PropertyGroup>
 
-    <PackageReference Include="MailKit" Version="4.14.1" />
-    <PackageReference Include="Spectre.Console" Version="0.54.0" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="GitVersion.MsBuild" Version="6.5.1">
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="MailKit" Version="4.14.1"></PackageReference>
+        <PackageReference Include="Spectre.Console" Version="0.54.0"></PackageReference>
+    </ItemGroup>
 
 </Project>

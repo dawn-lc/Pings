@@ -64,7 +64,6 @@ namespace Pings
                 {
                     foreach (var kv in webhook.Headers)
                     {
-                        // Add header to request
                         if (!request.Headers.TryAddWithoutValidation(kv.Key, kv.Value))
                         {
                             request.Content?.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
@@ -147,7 +146,7 @@ namespace Pings
         private static string BuildPlainTextBody(ICMPTestTask task)
         {
             var body = new StringBuilder();
-            body.AppendLine("Pings 网络监测告警");
+            body.AppendLine("Pings 告警");
             body.AppendLine();
             body.AppendLine($"任务名称：{task.Name}");
             body.AppendLine($"目标地址：{task.IP}");
@@ -186,7 +185,7 @@ namespace Pings
 <body>
     <div class='container'>
         <div class='header'>
-            <div class='title'>Pings 网络监测告警 <span class='status'>{task.State.ToChineseString()}</span></div>
+            <div class='title'>Pings 告警 <span class='status'>{task.State.ToChineseString()}</span></div>
         </div>
         <div class='info-row'>
             <div class='label'>任务名称：</div>
@@ -214,7 +213,7 @@ namespace Pings
         </div>
         <div class='footer'>
             <p>这是一条自动告警邮件，请勿回复。</p>
-            <p>© Pings Network Monitor</p>
+            <p>Pings</p>
         </div>
     </div>
 </body>

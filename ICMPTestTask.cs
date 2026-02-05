@@ -39,8 +39,6 @@ namespace Pings
         public ObservableQueue<string> Warnings { get; set; }
         /// <summary>最近数据包状态队列（用于统计）</summary>
         private ObservableQueue<IPStatus> RecentPackets { get; set; }
-        /// <summary>是否有未确认的警告</summary>
-        public bool IsWarning => Warnings.Count > 0;
 
         private string? lastLog;
         /// <summary>最后日志信息</summary>
@@ -74,25 +72,12 @@ namespace Pings
             }
             set
             {
+                _ = RecentPackets.EnqueueAsync(value);
                 if (State != value)
                 {
-                    // 获取新状态的分类
-                    IcmpFaultCategory newCategory = value.Classify();
-                    // 获取前一个状态的分类
-                    IcmpFaultCategory previousCategory = State.Classify();
-
-                    // 只有当分类不同时才触发事件
-                    bool categoryChanged = newCategory != previousCategory;
-
-                    // 保存上一次状态以便通知使用
                     previousState = state ?? IPStatus.Unknown;
                     state = value;
-
-                    // 分类改变时触发事件
-                    if (categoryChanged)
-                    {
-                        StatusChanged?.Invoke(this);
-                    }
+                    StatusChanged?.Invoke(this);
                 }
             }
         }
@@ -152,42 +137,21 @@ namespace Pings
 
             Task.Run(async () =>
             {
-                int pingCounter = 0;
                 Stopwatch stopwatch = new();
                 using Ping ping = new();
                 while (!CTS.Token.IsCancellationRequested)
                 {
                     stopwatch.Restart();
-                    PingReply? reply = null;
                     try
                     {
-                        reply = ping.Send(IP, timeout);
-
-                        // 先更新延迟，再更新状态（确保事件触发时数据一致）
-                        if (reply.Status == IPStatus.Success)
-                        {
-                            Delay = TimeSpan.FromMilliseconds(reply.RoundtripTime);
-                        }
-                        else
-                        {
-                            Delay = DefaultDelay;
-                        }
-
-                        // 最后更新状态，此时 Delay 已是正确值
+                        PingReply reply = ping.Send(IP, timeout);
+                        Delay = reply.Status == IPStatus.Success ? TimeSpan.FromMilliseconds(reply.RoundtripTime) : DefaultDelay;
                         State = reply.Status;
                     }
                     catch
                     {
                         Delay = DefaultDelay;
                         State = IPStatus.Unknown;
-                    }
-
-                    _ = RecentPackets.EnqueueAsync(State);
-
-                    pingCounter++;
-                    if (pingCounter == MaxRecentPackets)
-                    {
-                        pingCounter = 0;
                     }
 
                     stopwatch.Stop();
