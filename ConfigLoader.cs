@@ -16,14 +16,14 @@ namespace Pings
     [JsonSerializable(typeof(WebhookPayload))]
     internal partial class JsonContext : JsonSerializerContext
     {
-        private static readonly Lazy<JsonContext> _relaxed = new(() =>
+        private static readonly Lazy<JsonContext> relaxed = new(() =>
             new JsonContext(new JsonSerializerOptions
             {
                 WriteIndented = true,
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             }));
 
-        public static JsonContext Relaxed => _relaxed.Value;
+        public static JsonContext Relaxed => relaxed.Value;
     }
 
     /// <summary>

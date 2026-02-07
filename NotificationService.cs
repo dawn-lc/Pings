@@ -9,10 +9,11 @@ namespace Pings
     /// <summary>
     /// 负责发送Webhook与Email通知
     /// </summary>
-    class NotificationService(NotificationsConfig? config, Logging? logger = null)
+    class NotificationService(Logging logger, NotificationsConfig config) : IDisposable
     {
-        private readonly NotificationsConfig _config = config ?? new NotificationsConfig();
-        private static readonly HttpClient _httpClient = new();
+        private readonly NotificationsConfig config = config;
+        private static readonly HttpClient httpClient = new();
+        private bool disposed;
 
         public async Task NotifyStatusChangeAsync(ICMPTestTask task)
         {
@@ -28,14 +29,14 @@ namespace Pings
                     Timestamp = DateTime.Now.ToString("o")
                 };
 
-                if (_config.Webhook.Enabled && !string.IsNullOrWhiteSpace(_config.Webhook.Url))
+                if (config.Webhook.Enabled && !string.IsNullOrWhiteSpace(config.Webhook.Url))
                 {
-                    await SendWebhookAsync(payload, _config.Webhook);
+                    await SendWebhookAsync(payload, config.Webhook);
                 }
 
-                if (_config.Email.Enabled && !string.IsNullOrWhiteSpace(_config.Email.SmtpServer) && _config.Email.To?.Count > 0)
+                if (config.Email.Enabled && !string.IsNullOrWhiteSpace(config.Email.SmtpServer) && config.Email.To?.Count > 0)
                 {
-                    await SendEmailAsync(task, _config.Email);
+                    await SendEmailAsync(task, config.Email);
                 }
             }
             catch (Exception ex)
@@ -71,7 +72,7 @@ namespace Pings
                     }
                 }
 
-                var resp = await _httpClient.SendAsync(request);
+                var resp = await httpClient.SendAsync(request);
                 logger?.Log($"已触发Webhook，状态码: {resp.StatusCode}");
             }
             catch (Exception ex)
@@ -218,6 +219,31 @@ namespace Pings
     </div>
 </body>
 </html>";
+        }
+
+        /// <summary>
+        /// 释放资源
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// 释放资源实现
+        /// </summary>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposed)
+            {
+                if (disposing)
+                {
+                    // 清理静态HttpClient资源
+                    httpClient?.Dispose();
+                }
+                disposed = true;
+            }
         }
     }
 }

@@ -8,14 +8,14 @@ namespace Pings
     /// </summary>
     class Logging : IDisposable
     {
-        private bool disposedValue;
+        private bool disposed;
 
         private CancellationTokenSource CTS { get; set; }
         private StreamWriter OutputFile { get; set; }
         /// <summary>日志消息队列</summary>
-        private ConcurrentQueue<string>? Logs { get; set; }
+        private ConcurrentQueue<string> Logs { get; set; }
         /// <summary>字符串构建器，用于批量写入</summary>
-        private StringBuilder? Builder { get; set; }
+        private StringBuilder Builder { get; set; }
 
         /// <summary>
         /// 构造函数
@@ -42,15 +42,15 @@ namespace Pings
         /// </summary>
         private void Write()
         {
-            if (!(Logs?.IsEmpty ?? false))
+            if (!Logs.IsEmpty)
             {
-                while (Logs?.TryDequeue(out string? item) ?? false)
+                while (Logs.TryDequeue(out string? item))
                 {
-                    if (item != null) Builder?.AppendLine(item);
+                    if (item != null) Builder.AppendLine(item);
                 }
                 OutputFile.Write(Builder);
                 OutputFile.Flush();
-                Builder?.Clear();
+                Builder.Clear();
             }
         }
 
@@ -68,18 +68,16 @@ namespace Pings
         /// </summary>
         protected virtual void Dispose(bool disposing)
         {
-            if (!disposedValue)
+            if (!disposed)
             {
                 if (disposing)
                 {
                     Write();
                     CTS.Cancel();
-                    Builder = null;
-                    Logs = null;
                     OutputFile.Dispose();
                     CTS.Dispose();
                 }
-                disposedValue = true;
+                disposed = true;
             }
         }
 
