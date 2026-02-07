@@ -1,5 +1,4 @@
 ﻿#if WINDOWS
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 #endif
 using Spectre.Console;
@@ -105,6 +104,14 @@ namespace Pings
 
             [LibraryImport("kernel32.dll", SetLastError = true)]
             [return: MarshalAs(UnmanagedType.Bool)]
+            internal static partial bool PeekConsoleInputW(
+                 IntPtr hConsoleInput,
+                 [Out] INPUT_RECORD[] lpBuffer,
+                 uint nLength,
+                 out uint lpNumberOfEventsRead);
+
+            [LibraryImport("kernel32.dll", SetLastError = true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
             public static partial bool ReadConsoleInputW(
                 IntPtr hConsoleInput,
                 [Out] INPUT_RECORD[] buffer,
@@ -173,49 +180,80 @@ namespace Pings
 
             public static event Action<int, int>? Resized;
 
+
             public static void Start(CancellationToken token)
             {
                 if (IsRunning)
                     return;
 
-                worker = Task.Run(() =>
+                worker = Task.Run(() => Worker(token), token);
+            }
+            private static void Worker(CancellationToken token)
+            {
+                var handle = WindowsAPI.GetStdHandle(STD_INPUT_HANDLE);
+
+                if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+                    return;
+
+                if (WindowsAPI.GetConsoleMode(handle, out uint mode))
                 {
-                    var handle = WindowsAPI.GetStdHandle(STD_INPUT_HANDLE);
+                    uint newMode =
+                        mode
+                        | ENABLE_WINDOW_INPUT
+                        | ENABLE_EXTENDED_FLAGS;
 
-                    if (handle == IntPtr.Zero || handle == new IntPtr(-1))
-                        return;
+                    newMode &= ~ENABLE_QUICK_EDIT;
 
-                    if (WindowsAPI.GetConsoleMode(handle, out uint mode))
+                    WindowsAPI.SetConsoleMode(handle, newMode);
+                }
+
+                lastWidth = Console.WindowWidth;
+                lastHeight = Console.WindowHeight;
+
+                var buffer = new WindowsAPI.INPUT_RECORD[16];
+
+                while (!token.IsCancellationRequested)
+                {
+                    try
                     {
-                        uint newMode =
-                            mode
-                            | ENABLE_WINDOW_INPUT
-                            | ENABLE_EXTENDED_FLAGS;
-
-                        newMode &= ~ENABLE_QUICK_EDIT;
-
-                        WindowsAPI.SetConsoleMode(handle, newMode);
-                    }
-
-                    lastWidth = Console.WindowWidth;
-                    lastHeight = Console.WindowHeight;
-
-                    var records = new WindowsAPI.INPUT_RECORD[1];
-
-                    while (!token.IsCancellationRequested)
-                    {
-                        if (!WindowsAPI.ReadConsoleInputW(handle, records, 1, out uint read))
+                        if (!WindowsAPI.PeekConsoleInputW(
+                                handle,
+                                buffer,
+                                (uint)buffer.Length,
+                                out uint count))
                         {
+                            Thread.Sleep(50);
                             continue;
                         }
 
-                        if (read == 0)
+                        if (count == 0)
+                        {
+                            Thread.Sleep(50);
                             continue;
+                        }
 
-                        ref var record = ref records[0];
+                        bool hasResize = false;
 
-                        if (record.EventType != WINDOW_BUFFER_SIZE_EVENT)
+                        for (int i = 0; i < count; i++)
+                        {
+                            if (buffer[i].EventType == WINDOW_BUFFER_SIZE_EVENT)
+                            {
+                                hasResize = true;
+                                break;
+                            }
+                        }
+
+                        if (!hasResize)
+                        {
+                            Thread.Sleep(50);
                             continue;
+                        }
+
+                        WindowsAPI.ReadConsoleInputW(
+                            handle,
+                            buffer,
+                            count,
+                            out _);
 
                         int w = Console.WindowWidth;
                         int h = Console.WindowHeight;
@@ -228,8 +266,11 @@ namespace Pings
 
                         Resized?.Invoke(w, h);
                     }
-
-                }, token);
+                    catch
+                    {
+                        break;
+                    }
+                }
             }
         }
 #endif
@@ -250,7 +291,10 @@ namespace Pings
             AnsiConsole.Profile.Capabilities.Unicode = true;
             ConsoleResizeWatcher.Resized += (w, h) =>
             {
-                if (w < 64) Exit(1, "控制台窗口宽度过小！");
+                if (w < 64)
+                {
+                    Exit(1, "控制台窗口宽度过小！");
+                }
             };
             ConsoleResizeWatcher.Start(CTS.Token);
 #endif
@@ -405,7 +449,7 @@ namespace Pings
                     {
                         break;
                     }
-                    catch (Exception ex) 
+                    catch (Exception ex)
                     {
                         Exit(1, $"发生未知错误，程序即将退出.{ex}");
                     }
