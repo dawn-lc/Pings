@@ -74,7 +74,7 @@ namespace Pings
                 task.LastLog = $"{statusName} [{DateTime.Now:yyyy-MM-dd HH:mm:ss}]";
                 if (newCategory != previousCategory)
                 {
-                    _ = Notifier?.NotifyStatusChangeAsync(task);
+                     Notifier?.NotifyStatusChangeAsync(task);
 
                     if (newCategory != IcmpFaultCategory.None)
                     {

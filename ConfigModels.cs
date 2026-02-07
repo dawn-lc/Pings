@@ -162,12 +162,14 @@ namespace Pings
         [JsonPropertyName("headers")]
         public Dictionary<string, string> Headers { get; set; } = [];
 
-        // 认证类型，例如 "Bearer"；如果非空且 authToken 提供，将在请求中添加 Authorization 头
         [JsonPropertyName("authType")]
         public string AuthType { get; set; } = string.Empty;
 
         [JsonPropertyName("authToken")]
         public string AuthToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("content")]
+        public string Content { get; set; } = string.Empty;
     }
 
     public class EmailConfig
@@ -197,27 +199,4 @@ namespace Pings
         public List<string> To { get; set; } = [];
     }
 
-    /// <summary>
-    /// Webhook 通知 payload
-    /// </summary>
-    public class WebhookPayload
-    {
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [JsonPropertyName("ip")]
-        public string? IP { get; set; }
-
-        [JsonPropertyName("previousState")]
-        public string? PreviousState { get; set; }
-
-        [JsonPropertyName("state")]
-        public string? State { get; set; }
-
-        [JsonPropertyName("delayMs")]
-        public int? DelayMs { get; set; }
-
-        [JsonPropertyName("timestamp")]
-        public string? Timestamp { get; set; }
-    }
 }

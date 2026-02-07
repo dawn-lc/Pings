@@ -2,83 +2,225 @@ using MailKit.Net.Smtp;
 using MimeKit;
 using System.Net.NetworkInformation;
 using System.Text;
-using System.Text.Json;
 
 namespace Pings
 {
     /// <summary>
     /// 负责发送Webhook与Email通知
     /// </summary>
-    class NotificationService(Logging logger, NotificationsConfig config) : IDisposable
+    class NotificationService : IDisposable
     {
-        private readonly NotificationsConfig config = config;
-        private static readonly HttpClient httpClient = new();
+        private readonly NotificationsConfig Config;
+        private readonly HttpClient HttpClient;
+        private readonly Logging Logger;
         private bool disposed;
+        public NotificationService(Logging logger, NotificationsConfig config)
+        {
+            Config = config;
+            Logger = logger;
+            HttpClient = new();
+            HttpClient.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("Pings", Program.GetAppVersion()));
+            HttpClient.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("(https://dawnlc.me)"));
+        }
 
         public async Task NotifyStatusChangeAsync(ICMPTestTask task)
         {
             try
             {
-                var payload = new WebhookPayload
+                if (Config.Webhook.Enabled && !string.IsNullOrWhiteSpace(Config.Webhook.Url))
                 {
-                    Name = task.Name,
-                    IP = task.IP,
-                    PreviousState = task.PreviousState.ToString(),
-                    State = task.State.ToString(),
-                    DelayMs = (int)task.Delay.TotalMilliseconds,
-                    Timestamp = DateTime.Now.ToString("o")
-                };
-
-                if (config.Webhook.Enabled && !string.IsNullOrWhiteSpace(config.Webhook.Url))
-                {
-                    await SendWebhookAsync(payload, config.Webhook);
+                    await SendWebhookAsync(task, Config.Webhook);
                 }
 
-                if (config.Email.Enabled && !string.IsNullOrWhiteSpace(config.Email.SmtpServer) && config.Email.To?.Count > 0)
+                if (Config.Email.Enabled && !string.IsNullOrWhiteSpace(Config.Email.SmtpServer) && Config.Email.To?.Count > 0)
                 {
-                    await SendEmailAsync(task, config.Email);
+                    await SendEmailAsync(task, Config.Email);
                 }
             }
             catch (Exception ex)
             {
-                logger?.Log($"通知发送失败: {ex.Message}");
+                Logger?.Log($"通知发送失败: {ex.Message}");
             }
         }
 
-        private async Task SendWebhookAsync(WebhookPayload payload, WebhookConfig webhook)
+        private async Task SendWebhookAsync(ICMPTestTask task, WebhookConfig webhook)
         {
             try
             {
-                var context = new JsonContext();
-                var json = JsonSerializer.Serialize(payload, typeof(WebhookPayload), context);
                 using var request = new HttpRequestMessage(new HttpMethod(webhook.Method ?? "POST"), webhook.Url)
                 {
-                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                    Content = new StringContent(ApplyTemplate(webhook.Content, task), Encoding.UTF8, "application/json")
                 };
-
                 if (!string.IsNullOrWhiteSpace(webhook.AuthType) && !string.IsNullOrWhiteSpace(webhook.AuthToken))
                 {
                     request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(webhook.AuthType, webhook.AuthToken);
                 }
-
                 if (webhook.Headers != null)
                 {
                     foreach (var kv in webhook.Headers)
                     {
-                        if (!request.Headers.TryAddWithoutValidation(kv.Key, kv.Value))
+                        var headerValue = ApplyTemplate(kv.Value, task);
+                        if (!request.Headers.TryAddWithoutValidation(kv.Key, headerValue))
                         {
-                            request.Content?.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                            request.Content?.Headers.TryAddWithoutValidation(kv.Key, headerValue);
                         }
                     }
                 }
-
-                var resp = await httpClient.SendAsync(request);
-                logger?.Log($"已触发Webhook，状态码: {resp.StatusCode}");
+                var resp = await HttpClient.SendAsync(request);
+                Logger?.Log($"已触发Webhook，状态码: {resp.StatusCode}");
             }
             catch (Exception ex)
             {
-                logger?.Log($"Webhook触发失败: {ex.Message}");
+                Logger?.Log($"Webhook触发失败: {ex}");
             }
+        }
+
+        /// <summary>
+        /// 应用模板替换，将占位符替换为实际值
+        /// </summary>
+        private static string ApplyTemplate(string template, ICMPTestTask task)
+        {
+            if (string.IsNullOrEmpty(template))
+                return template;
+
+            // 创建变量字典
+            var variables = new Dictionary<string, string>
+            {
+                ["Name"] = task.Name,
+                ["IP"] = task.IP,
+                ["PreviousState"] = task.PreviousState.ToChineseString(),
+                ["State"] = task.State.ToChineseString(),
+                ["Delay"] = ((int)task.Delay.TotalMilliseconds).ToString(),
+                ["LastLog"] = task.LastLog,
+                ["PreviousDelay"] = ((int)task.PreviousDelay.TotalMilliseconds).ToString(),
+                ["CurrentTime"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            };
+
+            // 使用新的模板替换方法
+            return ReplaceVariables(template, variables, "%#", "#%");
+        }
+
+        /// <summary>
+        /// 替换字符串中的变量占位符（使用 C# 内置方法）
+        /// </summary>
+        /// <param name="template">模板字符串</param>
+        /// <param name="replacements">替换键值对</param>
+        /// <param name="prefix">占位符前缀，默认 "%#"</param>
+        /// <param name="suffix">占位符后缀，默认 "#%"</param>
+        /// <returns>替换后的字符串</returns>
+        private static string ReplaceVariables(string template, Dictionary<string, string> replacements, string prefix = "%#", string suffix = "#%")
+        {
+            if (string.IsNullOrEmpty(template) || replacements == null || replacements.Count == 0)
+                return template;
+
+            var seenStates = new HashSet<string>();
+            var current = template;
+
+            // 防止循环替换
+            while (true)
+            {
+                if (seenStates.Contains(current))
+                {
+                    break;
+                }
+                seenStates.Add(current);
+
+                var result = new StringBuilder();
+                int position = 0;
+                int templateLength = current.Length;
+                int prefixLength = prefix.Length;
+                int suffixLength = suffix.Length;
+                bool changed = false;
+
+                while (position < templateLength)
+                {
+                    // 使用 IndexOf 查找前缀
+                    int prefixIndex = current.IndexOf(prefix, position, StringComparison.Ordinal);
+
+                    if (prefixIndex == -1)
+                    {
+                        // 没有更多占位符，添加剩余部分
+                        result.Append(current[position..]);
+                        break;
+                    }
+
+                    // 添加前缀之前的部分
+                    result.Append(current[position..prefixIndex]);
+
+                    // 查找后缀
+                    int suffixIndex = current.IndexOf(suffix, prefixIndex + prefixLength, StringComparison.Ordinal);
+
+                    if (suffixIndex == -1)
+                    {
+                        // 没有找到匹配的后缀，添加剩余部分并退出
+                        result.Append(current[prefixIndex..]);
+                        break;
+                    }
+
+                    // 提取占位符内容
+                    int placeholderStart = prefixIndex + prefixLength;
+                    int placeholderLength = suffixIndex - placeholderStart;
+                    string placeholderContent = current.Substring(placeholderStart, placeholderLength);
+
+                    // 检查是否有格式化部分
+                    int colonIndex = placeholderContent.IndexOf(':');
+                    string? key, format = null;
+
+                    if (colonIndex > 0)
+                    {
+                        key = placeholderContent[..colonIndex];
+                        format = placeholderContent[(colonIndex + 1)..];
+                    }
+                    else
+                    {
+                        key = placeholderContent;
+                    }
+
+                    // 查找替换值
+                    if (replacements.TryGetValue(key, out var replacement))
+                    {
+                        // 应用格式化
+                        if (!string.IsNullOrEmpty(format))
+                        {
+                            // 简单的格式化支持
+                            if (DateTime.TryParse(replacement, out var dateValue))
+                            {
+                                try
+                                {
+                                    replacement = dateValue.ToString(format);
+                                }
+                                catch
+                                {
+                                }
+                            }
+                            // 可以添加其他类型的格式化支持
+                        }
+
+                        result.Append(replacement);
+                        changed = true;
+                    }
+                    else
+                    {
+                        // 没有找到替换值，保留原始占位符
+                        result.Append(prefix);
+                        result.Append(placeholderContent);
+                        result.Append(suffix);
+                    }
+
+                    // 移动到后缀之后
+                    position = suffixIndex + suffixLength;
+                }
+
+                if (!changed)
+                {
+                    // 没有更多替换，退出循环
+                    break;
+                }
+
+                current = result.ToString();
+            }
+
+            return current;
         }
 
         private async Task SendEmailAsync(ICMPTestTask task, EmailConfig email)
@@ -125,19 +267,19 @@ namespace Pings
                 await client.SendAsync(message);
                 await client.DisconnectAsync(true);
 
-                logger?.Log($"已发送通知到: {string.Join(", ", email.To)}");
+                Logger?.Log($"已发送通知到: {string.Join(", ", email.To)}");
             }
             catch (MailKit.Security.AuthenticationException ex)
             {
-                logger?.Log($"Email认证失败 - SMTP服务器: {email.SmtpServer}, 错误: {ex.Message}");
+                Logger?.Log($"Email认证失败 - SMTP服务器: {email.SmtpServer}, 错误: {ex.Message}");
             }
             catch (MailKit.ServiceNotConnectedException ex)
             {
-                logger?.Log($"Email连接失败 - {email.SmtpServer}:{email.Port}, 错误: {ex.Message}");
+                Logger?.Log($"Email连接失败 - {email.SmtpServer}:{email.Port}, 错误: {ex.Message}");
             }
             catch (Exception ex)
             {
-                logger?.Log($"Email发送失败: {ex.GetType().Name} - {ex.Message}");
+                Logger?.Log($"Email发送失败: {ex.GetType().Name} - {ex.Message}");
             }
         }
 
@@ -240,7 +382,7 @@ namespace Pings
                 if (disposing)
                 {
                     // 清理静态HttpClient资源
-                    httpClient?.Dispose();
+                    HttpClient?.Dispose();
                 }
                 disposed = true;
             }

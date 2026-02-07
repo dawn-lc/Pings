@@ -5,13 +5,26 @@ using System.Runtime.InteropServices;
 using Spectre.Console;
 using System.Net.NetworkInformation;
 using System.Text;
+using System.Reflection;
 
 namespace Pings
 {
     internal partial class Program
     {
-        private static CancellationTokenSource CTS { get; set; } = new();
 
+        public static string GetAppVersion()
+        {
+            var full = Assembly.GetEntryAssembly()?
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion;
+
+            if (string.IsNullOrWhiteSpace(full))
+                return "Unknown";
+
+            return full.Split('-', '+')[0];
+        }
+
+        private static CancellationTokenSource CTS { get; set; } = new();
         private static Logging Logging { get; set; } = new("pings.log");
         private static NotificationService? Notifier { get; set; }
 
@@ -272,10 +285,7 @@ namespace Pings
                 InitializeConsoleRuntime();
                 RegisterShutdownEvents();
 #if WINDOWS
-                string version = FileVersionInfo
-                    .GetVersionInfo(Environment.ProcessPath ?? throw new Exception("运行环境异常！"))
-                    .FileVersion?[..^2] ?? throw new Exception("程序文件异常！");
-                Console.Title = $"Pings {version}";
+                Console.Title = $"Pings {GetAppVersion()}";
 #endif
 
                 string configPath = Path.GetFullPath(args.Length > 0 ? args[0] : "config.json");
@@ -382,19 +392,22 @@ namespace Pings
         {
             return AnsiConsole.Live(monitor.TasksTable).StartAsync(async ctx =>
             {
+                AnsiConsole.WriteLine();
                 while (!CTS.Token.IsCancellationRequested)
                 {
-                    monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
-
-                    ctx.Refresh();
-
                     try
                     {
+                        monitor.TasksTable.Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测");
+                        ctx.Refresh();
                         await Task.Delay(1000, CTS.Token);
                     }
                     catch (TaskCanceledException)
                     {
                         break;
+                    }
+                    catch (Exception ex) 
+                    {
+                        Exit(1, $"发生未知错误，程序即将退出.{ex}");
                     }
                 }
             });

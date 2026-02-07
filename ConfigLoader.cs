@@ -13,7 +13,6 @@ namespace Pings
     [JsonSerializable(typeof(NotificationsConfig))]
     [JsonSerializable(typeof(WebhookConfig))]
     [JsonSerializable(typeof(EmailConfig))]
-    [JsonSerializable(typeof(WebhookPayload))]
     internal partial class JsonContext : JsonSerializerContext
     {
         private static readonly Lazy<JsonContext> relaxed = new(() =>
