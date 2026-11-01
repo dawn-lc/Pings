@@ -1,4 +1,5 @@
 using System.Text;
+using Pings.Properties;
 
 namespace Pings.Monitoring
 {
@@ -89,7 +90,7 @@ namespace Pings.Monitoring
 
             if (data.Length == 0)
             {
-                error = "udpPayload 的 base64: 前缀后没有内容";
+                error = Resources.UdpBase64Empty;
                 return false;
             }
 
@@ -99,19 +100,19 @@ namespace Pings.Monitoring
             }
             catch (FormatException)
             {
-                error = "udpPayload 的 base64 内容无法解码（检查字符集与末尾填充）";
+                error = Resources.UdpBase64Invalid;
                 return false;
             }
 
             if (bytes.Length == 0)
             {
-                error = "udpPayload 解码结果为空";
+                error = Resources.UdpPayloadEmptyAfterDecode;
                 return false;
             }
 
             if (bytes.Length > MaxBytes)
             {
-                error = $"udpPayload 解码后 {bytes.Length} 字节，超过 UDP 上限 {MaxBytes} 字节";
+                error = string.Format(Resources.UdpPayloadTooLarge, bytes.Length, MaxBytes);
                 return false;
             }
 
@@ -125,7 +126,7 @@ namespace Pings.Monitoring
 
             if (path.Length == 0)
             {
-                error = "udpPayload 的 file: 前缀后没有路径";
+                error = Resources.UdpFilePrefixNeedsPath;
                 return false;
             }
 
@@ -133,7 +134,7 @@ namespace Pings.Monitoring
 
             if (!File.Exists(fullPath))
             {
-                error = $"udpPayload 指定的文件不存在: {fullPath}";
+                error = string.Format(Resources.UdpFileNotFound, fullPath);
                 return false;
             }
 
@@ -143,7 +144,7 @@ namespace Pings.Monitoring
 
                 if (info.Length > MaxBytes)
                 {
-                    error = $"udpPayload 文件 {fullPath} 有 {info.Length} 字节，超过 UDP 上限 {MaxBytes} 字节";
+                    error = string.Format(Resources.UdpFileTooLarge, fullPath, info.Length, MaxBytes);
                     return false;
                 }
 
@@ -151,13 +152,13 @@ namespace Pings.Monitoring
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                error = $"udpPayload 文件读取失败: {ex.Message}";
+                error = string.Format(Resources.UdpFileReadFailed, ex.Message);
                 return false;
             }
 
             if (bytes.Length == 0)
             {
-                error = $"udpPayload 文件为空: {fullPath}";
+                error = string.Format(Resources.UdpFileEmpty, fullPath);
                 return false;
             }
 
@@ -171,7 +172,7 @@ namespace Pings.Monitoring
 
             if (bytes.Length > MaxBytes)
             {
-                error = $"udpPayload 有 {bytes.Length} 字节，超过 UDP 上限 {MaxBytes} 字节";
+                error = string.Format(Resources.UdpPayloadTooLarge, bytes.Length, MaxBytes);
                 return false;
             }
 

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Pings.Properties;
 
 namespace Pings.Configuration
 {
@@ -17,7 +18,7 @@ namespace Pings.Configuration
                 .ToArray();
 
             if (lines.Length == 0)
-                throw new InvalidOperationException("旧版配置文件为空或格式错误");
+                throw new InvalidOperationException(Resources.LegacyConfigEmpty);
 
             AppConfig config = new() { Tasks = [] };
 
@@ -25,7 +26,7 @@ namespace Pings.Configuration
             {
                 string[] parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length < 2)
-                    throw new InvalidOperationException($"无法解析的配置行: {line}");
+                    throw new InvalidOperationException(string.Format(Resources.LegacyLineUnparsable, line));
 
                 config.Tasks.Add(new ProbeTaskConfigJson
                 {

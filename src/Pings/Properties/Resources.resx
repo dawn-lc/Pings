@@ -1,0 +1,658 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    中性资源（英文）。语言文件的文件名**不带 .Culture 段**（ResourcesZhCn.resx 而不是
+    Resources.zh-CN.resx），再由 csproj 的 LogicalName 指定成
+    {BaseName}.{culture}.resources，这样 SDK 不会生成卫星程序集，
+    Native AOT 才能把全部语言打进单个 exe。详见 EmbeddedResourceManager。
+  -->
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ── CLI ── -->
+  <data name="Usage" xml:space="preserve">
+    <value>Usage: Pings [config] [options]
+
+Argument:
+  config                   Path to the JSON config. Defaults to config.json in the
+                           current directory, then next to the executable.
+
+Options:
+  -c, --config &lt;path&gt;      Path to the JSON config
+      --once               Probe once, print the table, then exit
+                           (for scripts/CI; never prompts)
+      --lang &lt;tag&gt;         UI language: auto / en / zh-CN (default: from config)
+      --no-color           Disable colored output
+      --no-pause           Never wait for input (errors or missing config)
+      --verbose            Print full stack traces on error
+  -h, --help               Show this help
+  -v, --version            Show version
+
+Runtime keys:
+  C  Acknowledge the current warnings
+  Q  Quit
+
+Exit codes:
+  0 success      1 bad arguments      2 config error
+  3 runtime error    4 unreachable target (--once)</value>
+  </data>
+  <data name="CliMissingOptionValue">
+    <value>Option {0} requires a value</value>
+  </data>
+  <data name="CliUnknownOption">
+    <value>Unknown option: {0}</value>
+  </data>
+  <data name="CliMultipleConfigFiles">
+    <value>Only one config file may be specified (extra: {0})</value>
+  </data>  <data name="CliInvalidLanguage">
+    <value>Invalid --lang value "{0}", expected one of {1}</value>
+  </data>  <data name="ExitCodeSuccess">
+    <value>success</value>
+  </data>
+  <data name="ExitCodeInvalidArguments">
+    <value>bad command line arguments</value>
+  </data>
+  <data name="ExitCodeConfiguration">
+    <value>config error</value>
+  </data>
+  <data name="ExitCodeRuntimeError">
+    <value>runtime error</value>
+  </data>
+  <data name="ExitCodeUnreachable">
+    <value>unreachable target</value>
+  </data>
+  <data name="ExitCodeUnknown">
+    <value>unknown exit code</value>
+  </data>
+
+  <!-- ── 配置加载 ── -->
+  <data name="ConfigFileNotFound">
+    <value>Config file not found: {0}</value>
+  </data>
+  <data name="ConfigContentEmpty">
+    <value>Config content is empty</value>
+  </data>
+  <data name="ConfigParseFailed">
+    <value>Failed to parse config: {0}</value>
+  </data>
+  <data name="ConfigSaveFailed">
+    <value>Failed to save config: {0}</value>
+  </data>
+
+  <!-- ── 默认任务名（Cloudflare 为专有名词，不翻译） ── -->
+  <data name="DefaultTaskDns">
+    <value>Cloudflare DNS</value>
+  </data>
+  <data name="DefaultTaskBackupDns">
+    <value>Cloudflare backup DNS</value>
+  </data>
+  <data name="DefaultTaskDoh">
+    <value>Cloudflare DoH</value>
+  </data>
+  <data name="DefaultTaskDot">
+    <value>Cloudflare DoT</value>
+  </data>
+  <data name="DefaultTaskConnectivity">
+    <value>Cloudflare connectivity</value>
+  </data>
+  <data name="DefaultTaskDiagnostics">
+    <value>Cloudflare diagnostics</value>
+  </data>
+  <data name="DefaultTaskTrace">
+    <value>Cloudflare trace</value>
+  </data>
+
+  <!-- ── 配置校验：任务 ── -->
+  <data name="ValidationAtLeastOneTask">
+    <value>At least one task is required (tasks)</value>
+  </data>
+  <data name="ValidationTaskNameRequired">
+    <value>{0}: name must not be empty</value>
+  </data>
+  <data name="ValidationTaskNameDuplicate">
+    <value>{0}: duplicate name, the live table cannot tell them apart</value>
+  </data>
+  <data name="ValidationProtocolInvalid">
+    <value>{0}: protocol "{1}" is invalid, expected icmp / tcp / udp / http</value>
+  </data>
+  <data name="ValidationEndpointDuplicate">
+    <value>{0}: duplicate endpoint, the same endpoint would be probed twice</value>
+  </data>
+  <data name="ValidationTimeoutOutOfRange">
+    <value>{0}: timeout must be between 1 and 60000 ms</value>
+  </data>
+  <data name="ValidationIntervalOutOfRange">
+    <value>{0}: interval must be between 0 and 60000 ms (0 means same as timeout)</value>
+  </data>
+  <data name="ValidationIntervalLessThanTimeout">
+    <value>{0}: interval is less than timeout, the real cadence will be stretched by probe duration</value>
+  </data>
+  <data name="ValidationMaxRecentPacketsOutOfRange">
+    <value>{0}: maxRecentPackets must be between 1 and 100000</value>
+  </data>
+  <data name="ValidationSignificantDelayThresholdOutOfRange">
+    <value>{0}: significantDelayThreshold must be between 0 and 60000 ms</value>
+  </data>
+  <data name="ValidationPacketLossDurationOutOfRange">
+    <value>{0}: packetLossDuration must be between 0 and 86400 s</value>
+  </data>
+  <data name="ValidationPacketLossCountInvalid">
+    <value>{0}: packetLossCount must be a non-negative integer</value>
+  </data>
+  <data name="ValidationLossFlapWindowOutOfRange">
+    <value>{0}: lossFlapWindowSeconds must be between 0 and 86400 s</value>
+  </data>
+  <data name="ValidationLossFlapCountInvalid">
+    <value>{0}: lossFlapCount must be a non-negative integer</value>
+  </data>
+  <data name="ValidationLossThresholdsBothZero">
+    <value>{0}: both outage thresholds are 0, no outage alarm will ever fire</value>
+  </data>
+  <data name="ValidationTargetRequired">
+    <value>{0}: target must not be empty</value>
+  </data>
+  <data name="ValidationTargetNotHttpUrl">
+    <value>{0}: target "{1}" is not a valid http/https URL</value>
+  </data>
+  <data name="ValidationTargetNotHost">
+    <value>{0}: target "{1}" is not a valid IP address or hostname</value>
+  </data>
+  <data name="ValidationPortRequired">
+    <value>{0}: {1} requires a port between 1 and 65535</value>
+  </data>
+  <data name="ValidationPortIgnored">
+    <value>{0}: {1} does not use port, the field is ignored</value>
+  </data>
+  <data name="ValidationPayloadSizeOutOfRange">
+    <value>{0}: payloadSize must be between 0 and 65500</value>
+  </data>
+  <data name="ValidationHttpMethodNotAllowed">
+    <value>{0}: httpMethod must be HEAD or GET</value>
+  </data>
+  <data name="ValidationExpectedStatusOutOfRange">
+    <value>{0}: expectedStatus contains invalid status code {1} (100-599)</value>
+  </data>
+
+  <!-- ── 配置校验：全局 / 日志 / 通知 ── -->
+  <data name="ValidationMissingGlobalSection">
+    <value>Missing global section (global)</value>
+  </data>
+  <data name="ValidationUiRefreshIntervalOutOfRange">
+    <value>global.uiRefreshInterval must be between 200 and 60000 ms</value>
+  </data>
+  <data name="ValidationAutoConfirmIntervalOutOfRange">
+    <value>global.autoConfirmWarningInterval must be between 0 and 86400 s</value>
+  </data>
+  <data name="ValidationNotificationCooldownOutOfRange">
+    <value>global.notificationCooldownSeconds must be between 0 and 86400 s</value>
+  </data>
+  <data name="ValidationLanguageInvalid">
+    <value>global.language "{0}" is invalid, expected {1}</value>
+  </data>
+  <data name="ValidationMissingLoggingSection">
+    <value>Missing logging section (logging)</value>
+  </data>
+  <data name="ValidationLogFilePathRequired">
+    <value>logging.logFilePath must not be empty</value>
+  </data>
+  <data name="ValidationMaxLogFileSizeOutOfRange">
+    <value>logging.maxLogFileSize must be between 1 and 1024 MB</value>
+  </data>
+  <data name="ValidationMaxLogFilesOutOfRange">
+    <value>logging.maxLogFiles must be between 1 and 100</value>
+  </data>
+  <data name="ValidationMissingNotificationsSection">
+    <value>Missing notifications section (notifications)</value>
+  </data>
+  <data name="ValidationWebhookUrlInvalid">
+    <value>notifications.webhook.url must be a valid http/https URL</value>
+  </data>
+  <data name="ValidationWebhookMethodRequired">
+    <value>notifications.webhook.method must not be empty</value>
+  </data>
+  <data name="ValidationWebhookEmptyHeaderKey">
+    <value>notifications.webhook.headers contains an empty key</value>
+  </data>
+  <data name="ValidationWebhookAuthTokenRequired">
+    <value>notifications.webhook sets authType but authToken is empty</value>
+  </data>
+  <data name="ValidationEmailSmtpServerRequired">
+    <value>notifications.email.smtpServer must not be empty</value>
+  </data>
+  <data name="ValidationEmailPortOutOfRange">
+    <value>notifications.email.port must be between 1 and 65535</value>
+  </data>
+  <data name="ValidationEmailFromInvalid">
+    <value>notifications.email.from is not a valid mailbox</value>
+  </data>
+  <data name="ValidationEmailToRequired">
+    <value>notifications.email.to requires at least one recipient</value>
+  </data>
+  <data name="ValidationEmailToInvalid">
+    <value>notifications.email.to contains an invalid mailbox</value>
+  </data>
+  <data name="ValidationEmailPasswordRequired">
+    <value>notifications.email sets username but password is empty</value>
+  </data>
+
+  <!-- ── 旧配置迁移 ── -->
+  <data name="LegacyConfigEmpty">
+    <value>Legacy config file is empty or malformed</value>
+  </data>
+  <data name="LegacyLineUnparsable">
+    <value>Cannot parse config line: {0}</value>
+  </data>
+
+  <!-- ── 日志 ── -->
+  <data name="LogFileUnavailable">
+    <value>Log file unavailable, file logging disabled: {0}</value>
+  </data>
+  <data name="LogWriterCrashed">
+    <value>Log writer loop exited unexpectedly: {0}</value>
+  </data>
+
+  <!-- ── 探测状态（状态列与告警文案共用；不能含空格，见 DEVELOPMENT「告警文案为什么很短」） ── -->
+  <data name="StatusUnknown">
+    <value>Unknown</value>
+  </data>
+  <data name="StatusSuccess">
+    <value>OK</value>
+  </data>
+  <data name="StatusTimeout">
+    <value>Timeout</value>
+  </data>
+  <data name="StatusNoReply">
+    <value>NoReply</value>
+  </data>
+  <data name="StatusUnreachable">
+    <value>Unreachable</value>
+  </data>
+  <data name="StatusPortClosed">
+    <value>PortClosed</value>
+  </data>
+  <data name="StatusDnsFailure">
+    <value>DNSFailed</value>
+  </data>
+  <data name="StatusTlsFailure">
+    <value>TLSFailed</value>
+  </data>
+  <data name="StatusHttpStatusUnexpected">
+    <value>BadStatus</value>
+  </data>
+  <data name="StatusResponseTimeout">
+    <value>RespTimeout</value>
+  </data>
+  <data name="StatusProtocolError">
+    <value>ProtocolError</value>
+  </data>
+  <data name="StatusLocalError">
+    <value>LocalError</value>
+  </data>
+  <data name="StatusFallback">
+    <value>UnknownError</value>
+  </data>
+
+  <!-- ── ICMP 原始状态 ── -->
+  <data name="IpStatusBadDestination">
+    <value>BadDestination</value>
+  </data>
+  <data name="IpStatusBadHeader">
+    <value>BadHeader</value>
+  </data>
+  <data name="IpStatusBadOption">
+    <value>BadOption</value>
+  </data>
+  <data name="IpStatusBadRoute">
+    <value>BadRoute</value>
+  </data>
+  <data name="IpStatusDestinationHostUnreachable">
+    <value>HostUnreachable</value>
+  </data>
+  <data name="IpStatusDestinationNetworkUnreachable">
+    <value>NetUnreachable</value>
+  </data>
+  <data name="IpStatusDestinationPortUnreachable">
+    <value>PortUnreachable</value>
+  </data>
+  <data name="IpStatusDestinationProhibited">
+    <value>Prohibited</value>
+  </data>
+  <data name="IpStatusDestinationScopeMismatch">
+    <value>ScopeMismatch</value>
+  </data>
+  <data name="IpStatusDestinationUnreachable">
+    <value>Unreachable</value>
+  </data>
+  <data name="IpStatusHardwareError">
+    <value>HardwareError</value>
+  </data>
+  <data name="IpStatusIcmpError">
+    <value>IcmpError</value>
+  </data>
+  <data name="IpStatusNoResources">
+    <value>NoResources</value>
+  </data>
+  <data name="IpStatusPacketTooBig">
+    <value>PacketTooBig</value>
+  </data>
+  <data name="IpStatusParameterProblem">
+    <value>ParameterProblem</value>
+  </data>
+  <data name="IpStatusSourceQuench">
+    <value>SourceQuench</value>
+  </data>
+  <data name="IpStatusSuccess">
+    <value>OK</value>
+  </data>
+  <data name="IpStatusTimedOut">
+    <value>Timeout</value>
+  </data>
+  <data name="IpStatusTimeExceeded">
+    <value>TimeExceeded</value>
+  </data>
+  <data name="IpStatusTtlExpired">
+    <value>TtlExpired</value>
+  </data>
+  <data name="IpStatusTtlReassemblyTimeExceeded">
+    <value>ReassemblyTimeout</value>
+  </data>
+  <data name="IpStatusUnknown">
+    <value>Unknown</value>
+  </data>
+  <data name="IpStatusUnrecognizedNextHeader">
+    <value>BadNextHeader</value>
+  </data>
+  <data name="IpStatusFallback">
+    <value>UnknownError</value>
+  </data>
+
+  <!-- ── 套接字错误 ── -->
+  <data name="SocketTimedOut">
+    <value>Timeout</value>
+  </data>
+  <data name="SocketConnectionRefused">
+    <value>Refused</value>
+  </data>
+  <data name="SocketConnectionReset">
+    <value>Reset</value>
+  </data>
+  <data name="SocketConnectionAborted">
+    <value>Aborted</value>
+  </data>
+  <data name="SocketHostNotFound">
+    <value>NoSuchHost</value>
+  </data>
+  <data name="SocketNoData">
+    <value>NoDNSData</value>
+  </data>
+  <data name="SocketNetworkUnreachable">
+    <value>NetUnreachable</value>
+  </data>
+  <data name="SocketHostUnreachable">
+    <value>HostUnreachable</value>
+  </data>
+  <data name="SocketNetworkDown">
+    <value>NetDown</value>
+  </data>
+  <data name="SocketHostDown">
+    <value>HostDown</value>
+  </data>
+  <data name="SocketAccessDenied">
+    <value>AccessDenied</value>
+  </data>
+  <data name="SocketTooManyOpenSockets">
+    <value>NoSockets</value>
+  </data>
+  <data name="SocketNoBufferSpaceAvailable">
+    <value>NoBuffer</value>
+  </data>
+
+  <!-- ── 告警状态机 ── -->
+  <data name="EventNone">
+    <value>No events yet</value>
+  </data>
+  <data name="AlarmOutageCount">
+    <value>NoResponse x{0}</value>
+  </data>
+  <data name="AlarmOutageSeconds">
+    <value>NoResponse {0}s</value>
+  </data>
+  <data name="AlarmOutageConfirmed">
+    <value>NoResponse {0}s confirmed</value>
+  </data>
+  <data name="AlarmFlapping">
+    <value>ShortOutages x{0} in {1}s</value>
+  </data>
+  <data name="EventDelaySpike">
+    <value>DelaySpike {0}ms-&gt;{1}ms</value>
+  </data>
+  <data name="EventSuccess">
+    <value>{0} {1}ms</value>
+  </data>
+  <data name="EventFailure">
+    <value>{0}: {1}</value>
+  </data>
+
+  <!-- ── 传输层 ── -->
+  <data name="ProbeCanceled">
+    <value>Probe canceled</value>
+  </data>
+  <data name="HttpTargetInvalid">
+    <value>HTTP probe needs an absolute http/https URL, got "{0}"</value>
+  </data>
+  <data name="TransportConnectTimeout">
+    <value>ConnectTimeout({0}ms)</value>
+  </data>
+  <data name="TransportResponseTimeout">
+    <value>ResponseTimeout({0}ms)</value>
+  </data>
+  <data name="TransportNoEcho">
+    <value>NoEcho({0}ms)</value>
+  </data>
+  <data name="TransportEmptyEcho">
+    <value>EmptyEcho</value>
+  </data>
+  <data name="TransportUdpPortUnreachable">
+    <value>PortUnreachable</value>
+  </data>
+
+  <!-- ── UDP 负载 ── -->
+  <data name="UdpBase64Empty">
+    <value>udpPayload: nothing after the base64: prefix</value>
+  </data>
+  <data name="UdpBase64Invalid">
+    <value>udpPayload: base64 content cannot be decoded (check the alphabet and trailing padding)</value>
+  </data>
+  <data name="UdpPayloadEmptyAfterDecode">
+    <value>udpPayload: decoded content is empty</value>
+  </data>
+  <data name="UdpPayloadTooLarge">
+    <value>udpPayload is {0} bytes, above the UDP limit of {1} bytes</value>
+  </data>
+  <data name="UdpFilePrefixNeedsPath">
+    <value>udpPayload: nothing after the file: prefix</value>
+  </data>
+  <data name="UdpFileNotFound">
+    <value>udpPayload file not found: {0}</value>
+  </data>
+  <data name="UdpFileTooLarge">
+    <value>udpPayload file {0} is {1} bytes, above the UDP limit of {2} bytes</value>
+  </data>
+  <data name="UdpFileReadFailed">
+    <value>udpPayload file read failed: {0}</value>
+  </data>
+  <data name="UdpFileEmpty">
+    <value>udpPayload file is empty: {0}</value>
+  </data>
+
+  <!-- ── 监控编排日志 ── -->
+  <data name="MonitorWarningAcknowledged">
+    <value>{0} ({1}) warning acknowledged: {2}</value>
+  </data>
+  <data name="MonitorNotificationsPending">
+    <value>Notifications still in flight, stopped waiting</value>
+  </data>
+  <data name="MonitorAlarmLogged">
+    <value>{0} alarm: {1}</value>
+  </data>
+  <data name="MonitorVerboseStatistics">
+    <value>{0} stats: sent {1} / received {2} / loss {3} / failure {4}</value>
+  </data>
+  <data name="MonitorNotificationFailed">
+    <value>Failed to send notification: {0} - {1}</value>
+  </data>
+
+  <!-- ── 通知 ── -->
+  <data name="NotificationWebhookSucceeded">
+    <value>Webhook triggered, status code: {0}</value>
+  </data>
+  <data name="NotificationWebhookNonSuccess">
+    <value>Webhook returned a non-success status code: {0} {1}</value>
+  </data>
+  <data name="NotificationWebhookFailed">
+    <value>Webhook failed: {0} - {1}</value>
+  </data>
+  <data name="NotificationEmailSubject">
+    <value>[Pings] {0} ({1}) status: {2}</value>
+  </data>
+  <data name="NotificationEmailSent">
+    <value>Notification sent to: {0}</value>
+  </data>
+  <data name="NotificationEmailAuthFailed">
+    <value>Email authentication failed - SMTP server: {0}, error: {1}</value>
+  </data>
+  <data name="NotificationEmailFailed">
+    <value>Failed to send email: {0} - {1}</value>
+  </data>
+  <data name="NotificationAlertTitle">
+    <value>Alert</value>
+  </data>
+  <data name="NotificationLabelTaskName">
+    <value>Task</value>
+  </data>
+  <data name="NotificationLabelEndpoint">
+    <value>Endpoint</value>
+  </data>
+  <data name="NotificationLabelProtocol">
+    <value>Protocol</value>
+  </data>
+  <data name="NotificationLabelStatus">
+    <value>Status</value>
+  </data>
+  <data name="NotificationLabelDelay">
+    <value>Latency</value>
+  </data>
+  <data name="NotificationLabelLossRate">
+    <value>Loss rate</value>
+  </data>
+  <data name="NotificationLabelFailureRate">
+    <value>Failure rate</value>
+  </data>
+  <data name="NotificationLabelTotalLossRate">
+    <value>Total loss rate</value>
+  </data>
+  <data name="NotificationLabelLastEvent">
+    <value>Last event</value>
+  </data>
+  <data name="NotificationLabelTimestamp">
+    <value>Timestamp</value>
+  </data>
+  <data name="NotificationLineFormat">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="NotificationLossRateWithWindow">
+    <value>Loss rate (window {0}): {1}</value>
+  </data>
+  <data name="NotificationFailureRateWithWindow">
+    <value>Failure rate (window {0}): {1}</value>
+  </data>
+
+  <!-- ── 程序入口 ── -->
+  <data name="ProgramArgumentError">
+    <value>Argument error: {0}</value>
+  </data>
+  <data name="ProgramConfigValidationFailed">
+    <value>Config validation failed ({0}):</value>
+  </data>
+  <data name="ProgramStartup">
+    <value>{0} started (config: {1})</value>
+  </data>
+  <data name="ProgramShutdown">
+    <value>Stopped</value>
+  </data>
+  <data name="ProgramNotificationsEnabled">
+    <value>Notifications enabled</value>
+  </data>
+  <data name="ProgramLegacyDetected">
+    <value>Legacy config {0} found, converting to JSON...</value>
+  </data>
+  <data name="ProgramLegacyGenerated">
+    <value>Generated {0}</value>
+  </data>
+  <data name="ProgramCreateDefaultPrompt">
+    <value>Config file {0} does not exist. Create a default one?</value>
+  </data>
+  <data name="ProgramDefaultCreated">
+    <value>Default config created: {0}</value>
+  </data>
+  <data name="ProgramUnhandledException">
+    <value>Unhandled exception</value>
+  </data>
+  <data name="ProgramError">
+    <value>Error: {0}</value>
+  </data>
+  <data name="ProgramPressAnyKey">
+    <value>Press any key to exit...</value>
+  </data>
+
+  <!-- ── 界面 ── -->
+  <data name="DateTimeFormat">
+    <value>yyyy-MM-dd HH:mm:ss</value>
+  </data>
+  <data name="MonitorTitle">
+    <value>{0} Network Monitor</value>
+  </data>
+  <data name="MonitorColumnName">
+    <value>Name</value>
+  </data>
+  <data name="MonitorColumnTarget">
+    <value>Target</value>
+  </data>
+  <data name="MonitorColumnStatus">
+    <value>Status</value>
+  </data>
+  <data name="MonitorColumnDelay">
+    <value>Delay</value>
+  </data>
+  <data name="MonitorColumnLoss">
+    <value>Loss</value>
+  </data>
+  <data name="MonitorColumnLog">
+    <value>Warning/Log</value>
+  </data>
+  <data name="MonitorNoTasks">
+    <value>No tasks</value>
+  </data>
+  <data name="MonitorCaptionAcknowledge">
+    <value>Acknowledge(C) / Quit(Q)</value>
+  </data>
+  <data name="MonitorHiddenTargets">
+    <value>{0} more target(s) hidden (faulty ones shown first)</value>
+  </data>
+  <data name="MonitorColumnsTrimmed">
+    <value>Narrow window, some columns hidden</value>
+  </data>
+  <data name="MonitorDroppedWarnings">
+    <value>{0} old warning(s) dropped</value>
+  </data>
+</root>

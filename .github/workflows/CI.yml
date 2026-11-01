@@ -43,7 +43,8 @@ jobs:
         shell: pwsh
         run: |
           # 源码统一 UTF-8 无 BOM：中文注释/字符串在 BOM 缺失或混用编码时会变成乱码。
-          $files = Get-ChildItem -Recurse -File -Include *.cs, *.md, *.json, *.yml, *.csproj |
+          # .resx 也要查：界面文案全在里面，编码坏了用户直接看到乱码。
+          $files = Get-ChildItem -Recurse -File -Include *.cs, *.md, *.json, *.yml, *.csproj, *.resx |
             Where-Object { $_.FullName -notmatch '\\(bin|obj|\.git)\\' }
 
           foreach ($file in $files) {

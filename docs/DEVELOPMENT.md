@@ -181,10 +181,11 @@ Spectre 的 `Overflow.Ellipsis` 只截断“超长单词”，遇到空格仍会
 同一条约束也适用于**状态列**：`ProbeResult.Detail` 会被直接渲染成状态文本，因此：
 
 - HTTP 只用 `HTTP 404`，**不带英文原因短语**（`HTTP 404 File not found` 带空格会被折行）；
-- 超时类文案写成 `连接超时(2000ms)` 而不是 `2000ms 内未完成连接`。
+- 超时类文案写成 `连接超时(2000ms)` 而不是 `2000ms 内未完成连接`；
+- 换成英文界面后同样不能出现空格，且长度必须压得住（详见「多语言资源约定」）。
 
 套接字错误同理：`SocketException.Message` 是整句英文，必须经 `SocketErrorMapping.Describe`
-转成 `连接被拒绝` 这类短中文再进快照。
+转成 `连接被拒绝` 这类短文案（随界面语言）再进快照。
 
 ## 命令行与退出码
 
@@ -192,6 +193,8 @@ Spectre 的 `Overflow.Ellipsis` 只截断“超长单词”，遇到空格仍会
 退出码在 `ExitCodes` 中集中定义，README 与 CI 都依赖这些值。
 
 `--once` 用于脚本：每个目标探测一次，输出静态表格；只要有一个目标非成功即返回 `4`。
+
+`--once` **隐含 `--no-pause`**（统一由 `CliOptions.IsNonInteractive` 表达）：脚本场景下既不能在「配置文件不存在，是否创建默认配置」上提问，也不能在结尾「按任意键退出」处停住——两条路径都会把一次笔误变成挂起，而且挂起时没有任何输出，很难定位。
 
 ## Native AOT 注意事项
 
@@ -414,6 +417,56 @@ CI 与 Release 的 `env.UPX_VERSION` 必须一致并固定，否则同一个 tag
 
 - 源码 UTF-8（无 BOM），行尾跟随仓库既有风格。
 - 类型/成员 PascalCase；私有字段 `_camelCase`；不使用下划线命名。
-- 面向用户的中文文本直接写在资源所在位置（当前不做多语言；
-  若要加语言，参考「资源编进主程序集 + 自定义 ResourceManager」的 AOT 方案）。
 - 修改配置模型时必须同步更新：`ConfigValidator`、README 字段表、相应测试。
+
+## 多语言资源约定
+
+界面文案一律通过 `Pings.Properties.Resources.Xxx` 取，**源码里不写用户可见的中文字面量**（XML 文档注释、`ArgumentException` 这类程序员可见的守卫消息除外）。
+
+### 为什么不用标准的 satellite 程序集
+
+标准做法是每种语言生成一个 `zh-CN\Pings.resources.dll` 卫星程序集，但那与「单文件下载」的发布形态冲突：**Native AOT 无法把卫星程序集打进 exe**，产物必然退化成「exe + 若干语言目录」。
+
+因此本项目把各语言的 `.resources` 用 `LogicalName` 直接编进主程序集，由 `Pings.Properties.EmbeddedResourceManager` 自行按 culture 链查找。发布产物始终只有一个 exe（实测 `dist/aot` 只有一个 4 MB 的 `Pings.exe`）。
+
+### 新增一个键
+
+1. 在 `src/Pings/Properties/Resources.resx`（**中性 = 英文**）加 `<data>`；
+2. 在 `src/Pings/Properties/ResourcesZhCn.resx` 加同键的中文；
+3. 在 `src/Pings/Properties/Resources.Designer.cs` 加一个属性。
+
+`LocalizationTests` 会校验这三处完全对齐：键集相等、占位符集合相等、无空值、Designer 属性覆盖全部键。漏一处就是测试失败，不依赖人工检查。
+
+### 新增一种语言
+
+语言清单的**唯一真相源**是 `Localization/UiLanguage.cs` 的 `SupportedCultures`——`TryResolve`（解析 `--lang` / `global.language`）与帮助文案里的「auto / en / zh-CN」都从它派生，不再各写一份。
+
+1. `SupportedCultures` 里加一项（如 `"ja"`）；
+2. 加 `Properties\ResourcesJa.resx`（**文件名不带 `.Culture` 段**）；
+3. csproj 里加对应的 `LogicalName`（`Pings.Properties.Resources.ja.resources`）。
+
+`LocalizationTests` 会反向校验：清单里的每一项都必须真能解析、且真能取到资源。漏了第 2 或第 3 步会直接测试失败，而不是运行时静默回退英文。
+
+注意 resx 文件名后缀（`Ja` / `ZhCn`）与 culture 标记（`ja` / `zh-CN`）之间**没有机器可读的映射**（`ZhCn` 对应 `zh-CN` 这层只存在于人的约定里），所以两边都必须是显式清单，不能靠推导。
+
+### 几条硬性约束
+
+- **文件名不带 `.Culture` 段**：写 `ResourcesZhCn.resx`，**不能**写 `Resources.zh-CN.resx`。带合法 culture 名的文件名会被 SDK 的 `AssignCulture` 认成文化资源并自动生成卫星程序集——正是要避免的东西。资源名由 csproj 的 `LogicalName` 指定（`Pings.Properties.Resources.resources` 与 `Pings.Properties.Resources.zh-CN.resources`），与文件名无关。
+- **`Resources.Designer.cs` 是手工维护的**，没有 VS 设计器自动同步；并且所有属性都必须走 `EmbeddedResourceManager`，不能用默认的 `ResourceManager`——后者只在卫星程序集里找 culture 资源，资源编进主程序集后会静默只返回英文。
+- **`InvariantGlobalization` 必须保持 `false`**（csproj 已设）。设为 `true` 会把 `CurrentUICulture` 永久钉在 Invariant，所有语言资源都会被忽略，且不报错。
+- **`NeutralLanguage` 是 `en`**：未受支持的系统语言回退到英文，而不是回退到某个具体译文。
+- **占位符语义跨语言必须一致**：`{0}` 在两种语言里指的是同一个参数。「顺序可以为排版而调整，语义不能变」——中文 `窗口 {1}s 内短时中断 {0} 次` 与英文 `Short outages x{0} in {1}s` 是合规的（都是 `{0}`=次数、`{1}`=窗口秒数）。
+
+### 告警/状态文案为什么很短
+
+状态列靠 Spectre 的 `Overflow.Ellipsis` 截断，而**折行只会发生在空格处**：状态文案里一旦出现空格，窄窗口下行高会被撑开，整个活动区域布局错乱。所以 `Status*` 这一组在两种语言里都**不含空格**，且英文长度必须控制在 ~12 字符内（英文比中文宽，长了会被截成 `...` 反而看不出状态）。`LocalizationTests` 用「不含空格 + 英文长度上限」两条断言把这个约束固化下来。
+
+### 语言是怎么选定的
+
+优先级：命令行 `--lang` > 配置 `global.language` > 系统默认。
+
+- `auto` 表示「跟随系统」，即不改动 `CultureInfo.CurrentUICulture`；
+- 切换只动 `CurrentUICulture`，**不动** `CurrentCulture`：数字与日期在本项目里一律用显式格式串，继续跟随系统文化，避免「切界面语言把日志时间格式也改了」；
+- 简繁与各类 `zh-*` 变体（`zh-Hans`、`zh-CHS`、`zh-SG`、`zh-TW`、`zh-Hant-HK` 等）统一归到 `zh-CN`。不归一的话 `CurrentUICulture` 报的是 `zh-Hans-CN` 之类，找不到对应资源就会**静默退回英文**；繁体用户落到简体也比看英文更可用。
+
+`--lang` 在完整参数解析**之前**就被摘出来应用（`CliOptions.FindLanguage`），否则「未知参数」这类报错只能用默认语言输出。

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using Pings.Properties;
 
 namespace Pings.Monitoring.Transports
 {
@@ -71,7 +72,7 @@ namespace Pings.Monitoring.Transports
 
                 return received > 0
                     ? ProbeResult.Success(elapsed)
-                    : ProbeResult.Failure(ProbeStatus.NoReply, "回声为空");
+                    : ProbeResult.Failure(ProbeStatus.NoReply, Resources.TransportEmptyEcho);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -79,7 +80,7 @@ namespace Pings.Monitoring.Transports
             }
             catch (OperationCanceledException)
             {
-                return ProbeResult.Failure(ProbeStatus.NoReply, $"未收到回声({_options.TimeoutMs}ms)");
+                return ProbeResult.Failure(ProbeStatus.NoReply, string.Format(Resources.TransportNoEcho, _options.TimeoutMs));
             }
             catch (SocketException ex)
             {
@@ -100,7 +101,7 @@ namespace Pings.Monitoring.Transports
             ProbeStatus status = SocketErrorMapping.Map(exception.SocketErrorCode);
 
             string detail = status == ProbeStatus.PortClosed
-                ? "端口不可达"
+                ? Resources.TransportUdpPortUnreachable
                 : SocketErrorMapping.Describe(exception.SocketErrorCode);
 
             return ProbeResult.Failure(status, detail);

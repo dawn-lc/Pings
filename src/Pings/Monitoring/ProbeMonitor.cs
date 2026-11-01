@@ -2,6 +2,7 @@ using Pings.Configuration;
 using Pings.Diagnostics;
 using Pings.Monitoring.Transports;
 using Pings.Notifications;
+using Pings.Properties;
 
 namespace Pings.Monitoring
 {
@@ -66,7 +67,7 @@ namespace Pings.Monitoring
             {
                 string? warning = task.Warnings.Dequeue();
                 if (warning is not null)
-                    _logging.Log($"{task.Options.Name}({task.Options.Endpoint}) 已确认警告: {warning}");
+                    _logging.Log(string.Format(Resources.MonitorWarningAcknowledged, task.Options.Name, task.Options.Endpoint, warning));
             }
         }
 
@@ -86,7 +87,7 @@ namespace Pings.Monitoring
                 }
                 catch (TimeoutException)
                 {
-                    _logging.Log("仍有通知在发送中，已跳过等待");
+                    _logging.Log(Resources.MonitorNotificationsPending);
                 }
             }
         }
@@ -117,7 +118,7 @@ namespace Pings.Monitoring
 
                 case ProbeEventKind.LossAlarm:
                 case ProbeEventKind.Flapping:
-                    _logging.Log($"{prefix} 告警: {e.Event.Message}");
+                    _logging.Log(string.Format(Resources.MonitorAlarmLogged, prefix, e.Event.Message));
                     task.Warnings.Enqueue($"{e.Event.Message} {FormatTime(snapshot.Timestamp)}");
                     Notify(snapshot, e.Event.Severity);
                     break;
@@ -127,9 +128,13 @@ namespace Pings.Monitoring
 
                     if (_global.EnableVerboseLogging)
                     {
-                        _logging.Log(
-                            $"{prefix} 统计: 发送 {snapshot.Statistics.Sent} / 接收 {snapshot.Statistics.Received} / " +
-                            $"丢包率 {snapshot.LossText} / 故障率 {snapshot.FailureText}");
+                        _logging.Log(string.Format(
+                            Resources.MonitorVerboseStatistics,
+                            prefix,
+                            snapshot.Statistics.Sent,
+                            snapshot.Statistics.Received,
+                            snapshot.LossText,
+                            snapshot.FailureText));
                     }
 
                     break;
@@ -222,7 +227,7 @@ namespace Pings.Monitoring
             }
             catch (Exception ex)
             {
-                _logging.Log($"通知发送失败: {ex.GetType().Name} - {ex.Message}");
+                _logging.Log(string.Format(Resources.MonitorNotificationFailed, ex.GetType().Name, ex.Message));
             }
         }
 

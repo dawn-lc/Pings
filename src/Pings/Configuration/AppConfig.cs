@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Pings.Localization;
 
 namespace Pings.Configuration
 {
@@ -143,6 +144,13 @@ namespace Pings.Configuration
         /// <summary>目标恢复连通时是否也发送通知，默认 true。</summary>
         [JsonPropertyName("notifyOnRecovery")]
         public bool NotifyOnRecovery { get; set; } = true;
+
+        /// <summary>
+        /// 界面语言：<c>auto</c>（跟随系统）/ <c>en</c> / <c>zh-CN</c>，默认 <c>auto</c>。
+        /// 命令行 <c>--lang</c> 优先于本项。
+        /// </summary>
+        [JsonPropertyName("language")]
+        public string Language { get; set; } = UiLanguage.Auto;
     }
 
     /// <summary>

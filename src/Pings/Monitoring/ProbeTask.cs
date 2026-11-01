@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Pings.Monitoring.Transports;
+using Pings.Properties;
 
 namespace Pings.Monitoring
 {
@@ -132,7 +133,7 @@ namespace Pings.Monitoring
             }
             catch (OperationCanceledException)
             {
-                return ProbeResult.Failure(ProbeStatus.Timeout, "探测被取消");
+                return ProbeResult.Failure(ProbeStatus.Timeout, Resources.ProbeCanceled);
             }
             catch (Exception ex)
             {

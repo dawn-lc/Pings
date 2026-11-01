@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using Pings.Properties;
 
 namespace Pings.Monitoring.Transports
 {
@@ -42,7 +43,7 @@ namespace Pings.Monitoring.Transports
             }
             catch (OperationCanceledException)
             {
-                return ProbeResult.Failure(ProbeStatus.Timeout, $"连接超时({_options.TimeoutMs}ms)");
+                return ProbeResult.Failure(ProbeStatus.Timeout, string.Format(Resources.TransportConnectTimeout, _options.TimeoutMs));
             }
             catch (SocketException ex)
             {

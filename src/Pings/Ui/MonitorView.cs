@@ -1,4 +1,5 @@
 using Pings.Monitoring;
+using Pings.Properties;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -127,7 +128,7 @@ namespace Pings.Ui
 
             Table table = new()
             {
-                Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测"),
+                Title = new TableTitle(string.Format(Resources.MonitorTitle, DateTime.Now.ToString(Resources.DateTimeFormat))),
                 Caption = new TableTitle(BuildCaption(selection.Hidden, columns.Count < 6, droppedWarnings)),
                 Expand = true
             };
@@ -149,33 +150,33 @@ namespace Pings.Ui
 
         private static string HeaderOf(MonitorColumn column) => column switch
         {
-            MonitorColumn.Name => "名称",
-            MonitorColumn.Target => "目标",
-            MonitorColumn.Status => "状态",
-            MonitorColumn.Delay => "延迟",
-            MonitorColumn.Loss => "丢包率",
-            MonitorColumn.Log => "警告/日志",
+            MonitorColumn.Name => Resources.MonitorColumnName,
+            MonitorColumn.Target => Resources.MonitorColumnTarget,
+            MonitorColumn.Status => Resources.MonitorColumnStatus,
+            MonitorColumn.Delay => Resources.MonitorColumnDelay,
+            MonitorColumn.Loss => Resources.MonitorColumnLoss,
+            MonitorColumn.Log => Resources.MonitorColumnLog,
             _ => string.Empty
         };
 
         private static IRenderable Placeholder(MonitorColumn column) => column switch
         {
-            MonitorColumn.Status => Cell("无任务"),
+            MonitorColumn.Status => Cell(Resources.MonitorNoTasks),
             _ => Cell("-")
         };
 
         private static string BuildCaption(int hidden, bool columnsTrimmed, long droppedWarnings)
         {
-            List<string> parts = ["确认警告(C) / 退出(Q)"];
+            List<string> parts = [Resources.MonitorCaptionAcknowledge];
 
             if (hidden > 0)
-                parts.Add($"另有 {hidden} 个目标未显示（已优先显示异常目标）");
+                parts.Add(string.Format(Resources.MonitorHiddenTargets, hidden));
 
             if (columnsTrimmed)
-                parts.Add("窗口较窄，已隐藏部分列");
+                parts.Add(Resources.MonitorColumnsTrimmed);
 
             if (droppedWarnings > 0)
-                parts.Add($"已丢弃 {droppedWarnings} 条旧告警");
+                parts.Add(string.Format(Resources.MonitorDroppedWarnings, droppedWarnings));
 
             return string.Join(" · ", parts);
         }

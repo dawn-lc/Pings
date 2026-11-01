@@ -1,3 +1,5 @@
+using Pings.Properties;
+
 namespace Pings.Monitoring
 {
     /// <summary>
@@ -124,21 +126,31 @@ namespace Pings.Monitoring
             _ => ProbeSeverity.Warning
         };
 
-        public static string ToChineseString(this ProbeStatus status) => status switch
+        /// <summary>
+        /// 面向界面的可读文案，随界面语言变化。
+        /// </summary>
+        /// <remarks>
+        /// **不要**用它做逻辑判断，也不要写进日志后再解析回来 —— 换语言后文本就变了。
+        /// 需要稳定的判据请用 <see cref="Category" /> / <see cref="Severity" /> 或枚举本身。
+        ///
+        /// 文案里**不能有空格**：实时表格的「状态」列靠 <c>Overflow.Ellipsis</c> 截断，
+        /// 而折行只会发生在空格处 —— 一旦出现空格，行高会被撑开，整个活动区域布局错乱。
+        /// </remarks>
+        public static string ToDisplayString(this ProbeStatus status) => status switch
         {
-            ProbeStatus.Unknown => "未知状态",
-            ProbeStatus.Success => "通讯正常",
-            ProbeStatus.Timeout => "请求超时",
-            ProbeStatus.NoReply => "无回应",
-            ProbeStatus.Unreachable => "目标不可达",
-            ProbeStatus.PortClosed => "端口关闭",
-            ProbeStatus.DnsFailure => "域名解析失败",
-            ProbeStatus.TlsFailure => "TLS握手失败",
-            ProbeStatus.HttpStatusUnexpected => "状态码异常",
-            ProbeStatus.ResponseTimeout => "响应超时",
-            ProbeStatus.ProtocolError => "协议错误",
-            ProbeStatus.LocalError => "本地网络错误",
-            _ => "未知错误"
+            ProbeStatus.Unknown => Resources.StatusUnknown,
+            ProbeStatus.Success => Resources.StatusSuccess,
+            ProbeStatus.Timeout => Resources.StatusTimeout,
+            ProbeStatus.NoReply => Resources.StatusNoReply,
+            ProbeStatus.Unreachable => Resources.StatusUnreachable,
+            ProbeStatus.PortClosed => Resources.StatusPortClosed,
+            ProbeStatus.DnsFailure => Resources.StatusDnsFailure,
+            ProbeStatus.TlsFailure => Resources.StatusTlsFailure,
+            ProbeStatus.HttpStatusUnexpected => Resources.StatusHttpStatusUnexpected,
+            ProbeStatus.ResponseTimeout => Resources.StatusResponseTimeout,
+            ProbeStatus.ProtocolError => Resources.StatusProtocolError,
+            ProbeStatus.LocalError => Resources.StatusLocalError,
+            _ => Resources.StatusFallback
         };
     }
 }

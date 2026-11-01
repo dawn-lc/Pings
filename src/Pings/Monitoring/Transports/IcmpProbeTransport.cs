@@ -1,5 +1,6 @@
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using Pings.Properties;
 
 namespace Pings.Monitoring.Transports
 {
@@ -42,7 +43,7 @@ namespace Pings.Monitoring.Transports
             }
             catch (PingException ex) when (ex.InnerException is SocketException socket)
             {
-                return ProbeResult.Failure(SocketErrorMapping.Map(socket.SocketErrorCode), socket.Message);
+                return ProbeResult.Failure(SocketErrorMapping.Map(socket.SocketErrorCode), SocketErrorMapping.Describe(socket.SocketErrorCode));
             }
             catch (Exception ex)
             {
@@ -82,32 +83,34 @@ namespace Pings.Monitoring.Transports
             _ => ProbeStatus.Unknown
         };
 
+        /// <summary>IPStatus 的短描述，用于状态列。</summary>
+        /// <remarks>文案里不能有空格，原因见 <see cref="ProbeStatusFacts.ToDisplayString" />。</remarks>
         internal static string Describe(IPStatus status) => status switch
         {
-            IPStatus.BadDestination => "目标地址错误",
-            IPStatus.BadHeader => "头部无效",
-            IPStatus.BadOption => "选项无效",
-            IPStatus.BadRoute => "路由无效",
-            IPStatus.DestinationHostUnreachable => "目标主机不可达",
-            IPStatus.DestinationNetworkUnreachable => "目标网络不可达",
-            IPStatus.DestinationPortUnreachable => "目标端口不可达",
-            IPStatus.DestinationProhibited => "目标禁止访问",
-            IPStatus.DestinationScopeMismatch => "目标范围不匹配",
-            IPStatus.DestinationUnreachable => "目标不可达",
-            IPStatus.HardwareError => "硬件错误",
-            IPStatus.IcmpError => "ICMP协议错误",
-            IPStatus.NoResources => "网络资源不足",
-            IPStatus.PacketTooBig => "数据包过大",
-            IPStatus.ParameterProblem => "参数问题",
-            IPStatus.SourceQuench => "数据包被放弃",
-            IPStatus.Success => "通讯正常",
-            IPStatus.TimedOut => "请求超时",
-            IPStatus.TimeExceeded => "生存时间过期",
-            IPStatus.TtlExpired => "TTL值过期",
-            IPStatus.TtlReassemblyTimeExceeded => "重组超时",
-            IPStatus.Unknown => "未知状态",
-            IPStatus.UnrecognizedNextHeader => "下一标头无法识别",
-            _ => "未知错误"
+            IPStatus.BadDestination => Resources.IpStatusBadDestination,
+            IPStatus.BadHeader => Resources.IpStatusBadHeader,
+            IPStatus.BadOption => Resources.IpStatusBadOption,
+            IPStatus.BadRoute => Resources.IpStatusBadRoute,
+            IPStatus.DestinationHostUnreachable => Resources.IpStatusDestinationHostUnreachable,
+            IPStatus.DestinationNetworkUnreachable => Resources.IpStatusDestinationNetworkUnreachable,
+            IPStatus.DestinationPortUnreachable => Resources.IpStatusDestinationPortUnreachable,
+            IPStatus.DestinationProhibited => Resources.IpStatusDestinationProhibited,
+            IPStatus.DestinationScopeMismatch => Resources.IpStatusDestinationScopeMismatch,
+            IPStatus.DestinationUnreachable => Resources.IpStatusDestinationUnreachable,
+            IPStatus.HardwareError => Resources.IpStatusHardwareError,
+            IPStatus.IcmpError => Resources.IpStatusIcmpError,
+            IPStatus.NoResources => Resources.IpStatusNoResources,
+            IPStatus.PacketTooBig => Resources.IpStatusPacketTooBig,
+            IPStatus.ParameterProblem => Resources.IpStatusParameterProblem,
+            IPStatus.SourceQuench => Resources.IpStatusSourceQuench,
+            IPStatus.Success => Resources.IpStatusSuccess,
+            IPStatus.TimedOut => Resources.IpStatusTimedOut,
+            IPStatus.TimeExceeded => Resources.IpStatusTimeExceeded,
+            IPStatus.TtlExpired => Resources.IpStatusTtlExpired,
+            IPStatus.TtlReassemblyTimeExceeded => Resources.IpStatusTtlReassemblyTimeExceeded,
+            IPStatus.Unknown => Resources.IpStatusUnknown,
+            IPStatus.UnrecognizedNextHeader => Resources.IpStatusUnrecognizedNextHeader,
+            _ => Resources.IpStatusFallback
         };
 
         public ValueTask DisposeAsync()

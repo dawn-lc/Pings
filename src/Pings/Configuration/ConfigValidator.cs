@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net.Mail;
+using Pings.Localization;
 using Pings.Monitoring;
+using Pings.Properties;
 
 namespace Pings.Configuration
 {
@@ -25,7 +27,7 @@ namespace Pings.Configuration
 
             if (config is null)
             {
-                errors.Add("配置内容为空");
+                errors.Add(Resources.ConfigContentEmpty);
                 return new ConfigValidationResult(errors, warnings);
             }
 
@@ -45,7 +47,7 @@ namespace Pings.Configuration
         {
             if (tasks is null || tasks.Count == 0)
             {
-                errors.Add("至少需要一个监控任务 (tasks)");
+                errors.Add(Resources.ValidationAtLeastOneTask);
                 return;
             }
 
@@ -58,14 +60,14 @@ namespace Pings.Configuration
                 string label = string.IsNullOrWhiteSpace(task.Name) ? $"tasks[{i}]" : task.Name;
 
                 if (string.IsNullOrWhiteSpace(task.Name))
-                    errors.Add($"{label}: 任务名称不能为空");
+                    errors.Add(string.Format(Resources.ValidationTaskNameRequired, label));
                 else if (!names.Add(task.Name.Trim()))
-                    warnings.Add($"{label}: 任务名称重复，实时表格将无法区分");
+                    warnings.Add(string.Format(Resources.ValidationTaskNameDuplicate, label));
 
                 bool protocolValid = ProbeProtocolExtensions.TryParseProtocol(task.Protocol, out ProbeProtocol protocol);
 
                 if (!protocolValid)
-                    errors.Add($"{label}: protocol \"{task.Protocol}\" 无效，可选 icmp / tcp / udp / http");
+                    errors.Add(string.Format(Resources.ValidationProtocolInvalid, label, task.Protocol));
 
                 bool targetValid = ValidateTarget(task, protocolValid ? protocol : ProbeProtocol.Icmp, label, errors);
 
@@ -75,37 +77,37 @@ namespace Pings.Configuration
                 if (protocolValid && targetValid
                     && !endpoints.Add(ProbeTaskOptions.BuildEndpoint(protocol, task.Target.Trim(), task.Port ?? 0)))
                 {
-                    warnings.Add($"{label}: 目标重复，会重复探测同一端点");
+                    warnings.Add(string.Format(Resources.ValidationEndpointDuplicate, label));
                 }
 
                 if (task.Timeout is < 1 or > 60_000)
-                    errors.Add($"{label}: timeout 必须在 1~60000 毫秒之间");
+                    errors.Add(string.Format(Resources.ValidationTimeoutOutOfRange, label));
 
                 if (task.Interval is < 0 or > 60_000)
-                    errors.Add($"{label}: interval 必须在 0~60000 毫秒之间（0 表示与 timeout 相同）");
+                    errors.Add(string.Format(Resources.ValidationIntervalOutOfRange, label));
                 else if (task.Interval > 0 && task.Interval < task.Timeout)
-                    warnings.Add($"{label}: interval 小于 timeout，实际探测间隔会被探测耗时撑长");
+                    warnings.Add(string.Format(Resources.ValidationIntervalLessThanTimeout, label));
 
                 if (task.MaxRecentPackets is < 1 or > 100_000)
-                    errors.Add($"{label}: maxRecentPackets 必须在 1~100000 之间");
+                    errors.Add(string.Format(Resources.ValidationMaxRecentPacketsOutOfRange, label));
 
                 if (task.SignificantDelayThreshold is < 0 or > 60_000)
-                    errors.Add($"{label}: significantDelayThreshold 必须在 0~60000 毫秒之间");
+                    errors.Add(string.Format(Resources.ValidationSignificantDelayThresholdOutOfRange, label));
 
                 if (task.PacketLossDuration is < 0 or > 86_400)
-                    errors.Add($"{label}: packetLossDuration 必须在 0~86400 秒之间");
+                    errors.Add(string.Format(Resources.ValidationPacketLossDurationOutOfRange, label));
 
                 if (task.PacketLossCount is < 0 or > 1_000_000)
-                    errors.Add($"{label}: packetLossCount 必须为非负整数");
+                    errors.Add(string.Format(Resources.ValidationPacketLossCountInvalid, label));
 
                 if (task.LossFlapWindowSeconds is < 0 or > 86_400)
-                    errors.Add($"{label}: lossFlapWindowSeconds 必须在 0~86400 秒之间");
+                    errors.Add(string.Format(Resources.ValidationLossFlapWindowOutOfRange, label));
 
                 if (task.LossFlapCount is < 0 or > 1_000_000)
-                    errors.Add($"{label}: lossFlapCount 必须为非负整数");
+                    errors.Add(string.Format(Resources.ValidationLossFlapCountInvalid, label));
 
                 if (task.PacketLossDuration == 0 && task.PacketLossCount == 0)
-                    warnings.Add($"{label}: 丢包持续时长与丢包次数阈值均为 0，不会触发中断告警");
+                    warnings.Add(string.Format(Resources.ValidationLossThresholdsBothZero, label));
             }
         }
 
@@ -113,7 +115,7 @@ namespace Pings.Configuration
         {
             if (string.IsNullOrWhiteSpace(task.Target))
             {
-                errors.Add($"{label}: 目标地址不能为空");
+                errors.Add(string.Format(Resources.ValidationTargetRequired, label));
                 return false;
             }
 
@@ -123,7 +125,7 @@ namespace Pings.Configuration
             {
                 if (!ProbeTaskOptions.IsValidHttpUrl(target))
                 {
-                    errors.Add($"{label}: target \"{target}\" 不是有效的 http/https 地址");
+                    errors.Add(string.Format(Resources.ValidationTargetNotHttpUrl, label, target));
                     return false;
                 }
 
@@ -132,7 +134,7 @@ namespace Pings.Configuration
 
             if (!ProbeTaskOptions.IsValidHost(target))
             {
-                errors.Add($"{label}: 目标地址 \"{target}\" 不是有效的 IP 或域名");
+                errors.Add(string.Format(Resources.ValidationTargetNotHost, label, target));
                 return false;
             }
 
@@ -150,18 +152,18 @@ namespace Pings.Configuration
             if (protocol.RequiresPort())
             {
                 if (task.Port is not (>= 1 and <= 65_535))
-                    errors.Add($"{label}: {protocol.ToConfigString()} 需要 1~65535 的端口 (port)");
+                    errors.Add(string.Format(Resources.ValidationPortRequired, label, protocol.ToConfigString()));
             }
             else if (task.Port is not null)
             {
-                warnings.Add($"{label}: {protocol.ToConfigString()} 不使用 port，该字段被忽略");
+                warnings.Add(string.Format(Resources.ValidationPortIgnored, label, protocol.ToConfigString()));
             }
 
             switch (protocol)
             {
                 case ProbeProtocol.Icmp:
                     if (task.PayloadSize is < 0 or > 65_500)
-                        errors.Add($"{label}: payloadSize 必须在 0~65500 之间");
+                        errors.Add(string.Format(Resources.ValidationPayloadSizeOutOfRange, label));
                     break;
 
                 case ProbeProtocol.Udp:
@@ -176,7 +178,7 @@ namespace Pings.Configuration
                     {
                         string method = task.HttpMethod.Trim().ToUpperInvariant();
                         if (method is not ("HEAD" or "GET"))
-                            errors.Add($"{label}: httpMethod 只允许 HEAD 或 GET");
+                            errors.Add(string.Format(Resources.ValidationHttpMethodNotAllowed, label));
                     }
 
                     if (task.ExpectedStatus is not null)
@@ -184,7 +186,7 @@ namespace Pings.Configuration
                         foreach (int code in task.ExpectedStatus)
                         {
                             if (code is < 100 or > 599)
-                                errors.Add($"{label}: expectedStatus 包含非法状态码 {code}（100~599）");
+                                errors.Add(string.Format(Resources.ValidationExpectedStatusOutOfRange, label, code));
                         }
                     }
                     break;
@@ -195,43 +197,46 @@ namespace Pings.Configuration
         {
             if (global is null)
             {
-                errors.Add("缺少全局配置 (global)");
+                errors.Add(Resources.ValidationMissingGlobalSection);
                 return;
             }
 
             if (global.UiRefreshInterval is < 200 or > 60_000)
-                errors.Add("global.uiRefreshInterval 必须在 200~60000 毫秒之间");
+                errors.Add(Resources.ValidationUiRefreshIntervalOutOfRange);
 
             if (global.AutoConfirmWarningInterval is < 0 or > 86_400)
-                errors.Add("global.autoConfirmWarningInterval 必须在 0~86400 秒之间");
+                errors.Add(Resources.ValidationAutoConfirmIntervalOutOfRange);
 
             if (global.NotificationCooldownSeconds is < 0 or > 86_400)
-                errors.Add("global.notificationCooldownSeconds 必须在 0~86400 秒之间");
+                errors.Add(Resources.ValidationNotificationCooldownOutOfRange);
+
+            if (!UiLanguage.TryResolve(global.Language, out CultureInfo? culture))
+                errors.Add(string.Format(Resources.ValidationLanguageInvalid, global.Language, UiLanguage.SupportedMarkerList));
         }
 
         private static void ValidateLogging(LoggingConfig? logging, List<string> errors, List<string> _)
         {
             if (logging is null)
             {
-                errors.Add("缺少日志配置 (logging)");
+                errors.Add(Resources.ValidationMissingLoggingSection);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(logging.LogFilePath))
-                errors.Add("logging.logFilePath 不能为空");
+                errors.Add(Resources.ValidationLogFilePathRequired);
 
             if (logging.MaxLogFileSize is < 1 or > 1024)
-                errors.Add("logging.maxLogFileSize 必须在 1~1024 MB 之间");
+                errors.Add(Resources.ValidationMaxLogFileSizeOutOfRange);
 
             if (logging.MaxLogFiles is < 1 or > 100)
-                errors.Add("logging.maxLogFiles 必须在 1~100 之间");
+                errors.Add(Resources.ValidationMaxLogFilesOutOfRange);
         }
 
         private static void ValidateNotifications(NotificationsConfig? notifications, List<string> errors, List<string> _)
         {
             if (notifications is null)
             {
-                errors.Add("缺少通知配置 (notifications)");
+                errors.Add(Resources.ValidationMissingNotificationsSection);
                 return;
             }
 
@@ -241,17 +246,17 @@ namespace Pings.Configuration
                 if (!Uri.TryCreate(webhook.Url, UriKind.Absolute, out Uri? uri)
                     || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
                 {
-                    errors.Add("notifications.webhook.url 必须是有效的 http/https 地址");
+                    errors.Add(Resources.ValidationWebhookUrlInvalid);
                 }
 
                 if (string.IsNullOrWhiteSpace(webhook.Method))
-                    errors.Add("notifications.webhook.method 不能为空");
+                    errors.Add(Resources.ValidationWebhookMethodRequired);
 
                 if (webhook.Headers is not null && webhook.Headers.Keys.Any(string.IsNullOrWhiteSpace))
-                    errors.Add("notifications.webhook.headers 存在空键名");
+                    errors.Add(Resources.ValidationWebhookEmptyHeaderKey);
 
                 if (!string.IsNullOrWhiteSpace(webhook.AuthType) && string.IsNullOrWhiteSpace(webhook.AuthToken))
-                    errors.Add("notifications.webhook 配置了 authType 但 authToken 为空");
+                    errors.Add(Resources.ValidationWebhookAuthTokenRequired);
             }
 
             EmailConfig email = notifications.Email ?? new EmailConfig();
@@ -259,21 +264,21 @@ namespace Pings.Configuration
                 return;
 
             if (string.IsNullOrWhiteSpace(email.SmtpServer))
-                errors.Add("notifications.email.smtpServer 不能为空");
+                errors.Add(Resources.ValidationEmailSmtpServerRequired);
 
             if (email.Port is < 1 or > 65_535)
-                errors.Add("notifications.email.port 必须在 1~65535 之间");
+                errors.Add(Resources.ValidationEmailPortOutOfRange);
 
             if (!IsValidMailbox(email.From))
-                errors.Add("notifications.email.from 不是有效的邮箱地址");
+                errors.Add(Resources.ValidationEmailFromInvalid);
 
             if (email.To is null || email.To.Count == 0)
-                errors.Add("notifications.email.to 至少需要一个收件人");
+                errors.Add(Resources.ValidationEmailToRequired);
             else if (email.To.Any(address => !IsValidMailbox(address)))
-                errors.Add("notifications.email.to 包含无效的邮箱地址");
+                errors.Add(Resources.ValidationEmailToInvalid);
 
             if (!string.IsNullOrWhiteSpace(email.Username) && string.IsNullOrWhiteSpace(email.Password))
-                errors.Add("notifications.email 配置了 username 但 password 为空");
+                errors.Add(Resources.ValidationEmailPasswordRequired);
         }
 
         private static bool IsValidMailbox(string? address)

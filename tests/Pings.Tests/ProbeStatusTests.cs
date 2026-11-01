@@ -1,3 +1,4 @@
+using System.Globalization;
 using Pings.Monitoring;
 
 namespace Pings.Tests;
@@ -23,18 +24,45 @@ public class ProbeStatusTests
     }
 
     [Fact]
-    public void 所有状态都有中文描述()
+    public void 所有状态都有描述()
     {
         foreach (ProbeStatus status in Enum.GetValues<ProbeStatus>())
-            Assert.False(string.IsNullOrWhiteSpace(status.ToChineseString()));
+            Assert.False(string.IsNullOrWhiteSpace(status.ToDisplayString()));
     }
 
     [Fact]
-    public void 成功状态描述为通讯正常()
+    public void 中文界面下状态描述为中文()
     {
-        Assert.Equal("通讯正常", ProbeStatus.Success.ToChineseString());
-        Assert.Equal("请求超时", ProbeStatus.Timeout.ToChineseString());
-        Assert.Equal("端口关闭", ProbeStatus.PortClosed.ToChineseString());
+        CultureInfo original = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = new CultureInfo("zh-CN");
+
+            Assert.Equal("通讯正常", ProbeStatus.Success.ToDisplayString());
+            Assert.Equal("请求超时", ProbeStatus.Timeout.ToDisplayString());
+            Assert.Equal("端口关闭", ProbeStatus.PortClosed.ToDisplayString());
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = original;
+        }
+    }
+
+    [Fact]
+    public void 英文界面下状态描述为英文()
+    {
+        CultureInfo original = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = new CultureInfo("en");
+
+            Assert.Equal("OK", ProbeStatus.Success.ToDisplayString());
+            Assert.Equal("Timeout", ProbeStatus.Timeout.ToDisplayString());
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = original;
+        }
     }
 
     [Theory]

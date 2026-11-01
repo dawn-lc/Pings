@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using Pings.Properties;
 
 namespace Pings.Monitoring.Transports
 {
@@ -34,7 +35,7 @@ namespace Pings.Monitoring.Transports
             _options = options ?? throw new ArgumentNullException(nameof(options));
 
             if (!ProbeTaskOptions.IsValidHttpUrl(options.Target))
-                throw new ArgumentException($"HTTP 探测需要 http/https 绝对地址，实际为 \"{options.Target}\"", nameof(options));
+                throw new ArgumentException(string.Format(Resources.HttpTargetInvalid, options.Target), nameof(options));
 
             _uri = new Uri(options.Target, UriKind.Absolute);
             _method = ProbeTaskOptions.NormalizeHttpMethod(options.HttpMethod);
@@ -108,8 +109,8 @@ namespace Pings.Monitoring.Transports
             catch (OperationCanceledException)
             {
                 return _connectMs is null
-                    ? ProbeResult.Failure(ProbeStatus.Timeout, $"连接超时({_options.TimeoutMs}ms)")
-                    : ProbeResult.Failure(ProbeStatus.ResponseTimeout, $"响应超时({_options.TimeoutMs}ms)");
+                    ? ProbeResult.Failure(ProbeStatus.Timeout, string.Format(Resources.TransportConnectTimeout, _options.TimeoutMs))
+                    : ProbeResult.Failure(ProbeStatus.ResponseTimeout, string.Format(Resources.TransportResponseTimeout, _options.TimeoutMs));
             }
             catch (HttpRequestException ex)
             {

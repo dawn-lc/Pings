@@ -2,8 +2,16 @@ using Pings.Configuration;
 
 namespace Pings.Tests;
 
-public class ConfigValidatorTests
+/// <remarks>
+/// 整个类固定为中文界面语言：这些用例断言的是中文提示词，
+/// 不固定的话在英文环境（CI）下会全部失败。
+/// </remarks>
+public class ConfigValidatorTests : IDisposable
 {
+    private readonly CultureScope _culture = CultureScope.Chinese();
+
+    public void Dispose() => _culture.Dispose();
+
     private static AppConfig ValidConfig() => new()
     {
         Tasks =

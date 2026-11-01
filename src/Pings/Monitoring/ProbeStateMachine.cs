@@ -1,3 +1,5 @@
+using Pings.Properties;
+
 namespace Pings.Monitoring
 {
     /// <summary>探测事件类型。</summary>
@@ -53,7 +55,7 @@ namespace Pings.Monitoring
         private ProbeStatus _status = ProbeStatus.Unknown;
         private ProbeFaultCategory _category = ProbeFaultCategory.None;
         private ProbeSeverity _severity = ProbeSeverity.None;
-        private string _lastEvent = "暂无事件";
+        private string? _lastEvent;
         private ProbeSeverity _lastEventSeverity = ProbeSeverity.None;
         private DateTimeOffset _lastEventAt = DateTimeOffset.Now;
 
@@ -80,7 +82,8 @@ namespace Pings.Monitoring
 
         public ProbeSeverity Severity => _severity;
 
-        public string LastEvent => _lastEvent;
+        /// <summary>最近一次事件文案；尚无事件时返回当前语言下的「暂无事件」。</summary>
+        public string LastEvent => _lastEvent ?? Resources.EventNone;
 
         public DateTimeOffset LastEventAt => _lastEventAt;
 
@@ -168,19 +171,19 @@ namespace Pings.Monitoring
                     RaiseAlarm(
                         ref events,
                         hasDuration ? ProbeSeverity.Warning : ProbeSeverity.Critical,
-                        $"连续无响应 {_consecutiveOutages} 次");
+                        string.Format(Resources.AlarmOutageCount, _consecutiveOutages));
                 }
                 else if (!hasCount && hasDuration && seconds >= _options.PacketLossDurationSeconds)
                 {
                     _outage = OutageState.Confirmed;
-                    RaiseAlarm(ref events, ProbeSeverity.Critical, $"连续无响应 {seconds:0}s");
+                    RaiseAlarm(ref events, ProbeSeverity.Critical, string.Format(Resources.AlarmOutageSeconds, seconds));
                 }
             }
 
             if (_outage == OutageState.Suspect && seconds >= _options.PacketLossDurationSeconds)
             {
                 _outage = OutageState.Confirmed;
-                RaiseAlarm(ref events, ProbeSeverity.Critical, $"连续无响应 {seconds:0}s 已确认");
+                RaiseAlarm(ref events, ProbeSeverity.Critical, string.Format(Resources.AlarmOutageConfirmed, seconds));
             }
         }
 
@@ -213,7 +216,7 @@ namespace Pings.Monitoring
                 events.Add(new ProbeEvent(
                     ProbeEventKind.Flapping,
                     ProbeSeverity.Warning,
-                    $"{_options.LossFlapWindowSeconds:0}s 内短时中断 {_shortEpisodes.Count} 次"));
+                    string.Format(Resources.AlarmFlapping, _shortEpisodes.Count, $"{_options.LossFlapWindowSeconds:0}")));
             }
         }
 
@@ -264,7 +267,7 @@ namespace Pings.Monitoring
                         events.Add(new ProbeEvent(
                             ProbeEventKind.DelaySpike,
                             ProbeSeverity.Info,
-                            $"延迟升高 {srttBefore:0}ms → {rtt:0}ms"));
+                            string.Format(Resources.EventDelaySpike, $"{srttBefore:0}", $"{rtt:0}")));
                     }
                 }
                 else
@@ -302,19 +305,19 @@ namespace Pings.Monitoring
         }
 
         private static string StatusTextOf(ProbeResult result)
-            => string.IsNullOrWhiteSpace(result.Detail) ? result.Status.ToChineseString() : result.Detail!;
+            => string.IsNullOrWhiteSpace(result.Detail) ? result.Status.ToDisplayString() : result.Detail!;
 
         private static string Describe(ProbeResult result)
         {
             if (result.Status.IsSuccess())
-                return $"{StatusTextOf(result)} {result.RttMs.GetValueOrDefault():0}ms";
+                return string.Format(Resources.EventSuccess, StatusTextOf(result), $"{result.RttMs.GetValueOrDefault():0}");
 
-            string text = result.Status.ToChineseString();
+            string text = result.Status.ToDisplayString();
 
-            // ICMP 的 Detail 本身就是中文状态描述，避免出现「请求超时: 请求超时」。
+            // 传输层给的 Detail 可能与状态文案完全一样，避免出现「请求超时: 请求超时」。
             return string.IsNullOrWhiteSpace(result.Detail) || result.Detail == text
                 ? text
-                : $"{text}: {result.Detail}";
+                : string.Format(Resources.EventFailure, text, result.Detail);
         }
     }
 }

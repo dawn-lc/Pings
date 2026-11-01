@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Pings.Configuration;
+using Pings.Properties;
 
 namespace Pings.Diagnostics
 {
@@ -35,7 +36,7 @@ namespace Pings.Diagnostics
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
             {
                 // 日志文件不可用时退化为仅控制台输出，而不是让程序启动失败。
-                Console.Error.WriteLine($"日志文件不可用，已禁用文件日志: {ex.Message}");
+                Console.Error.WriteLine(string.Format(Resources.LogFileUnavailable, ex.Message));
                 _file = null;
             }
 
@@ -77,7 +78,7 @@ namespace Pings.Diagnostics
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"日志写入循环异常退出: {ex.Message}");
+                Console.Error.WriteLine(string.Format(Resources.LogWriterCrashed, ex.Message));
             }
         }
 

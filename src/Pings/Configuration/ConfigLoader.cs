@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Pings.Properties;
 
 namespace Pings.Configuration
 {
@@ -19,18 +20,18 @@ namespace Pings.Configuration
         public static AppConfig LoadConfig(string configPath)
         {
             if (!File.Exists(configPath))
-                throw new FileNotFoundException($"配置文件不存在: {configPath}", configPath);
+                throw new FileNotFoundException(string.Format(Resources.ConfigFileNotFound, configPath), configPath);
 
             try
             {
                 // 用 ReadAllText 而不是读取字节：自动跳过 UTF-8 BOM。
                 string json = File.ReadAllText(configPath, Encoding.UTF8);
                 return JsonSerializer.Deserialize(json, JsonContext.Relaxed.AppConfig)
-                    ?? throw new JsonException("配置文件内容为空");
+                    ?? throw new JsonException(Resources.ConfigContentEmpty);
             }
             catch (JsonException ex)
             {
-                throw new InvalidOperationException($"配置文件解析失败: {ex.Message}", ex);
+                throw new InvalidOperationException(string.Format(Resources.ConfigParseFailed, ex.Message), ex);
             }
         }
 
@@ -54,7 +55,7 @@ namespace Pings.Configuration
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
             {
-                throw new InvalidOperationException($"配置文件保存失败: {ex.Message}", ex);
+                throw new InvalidOperationException(string.Format(Resources.ConfigSaveFailed, ex.Message), ex);
             }
         }
 
@@ -102,7 +103,7 @@ namespace Pings.Configuration
         [
             new()
             {
-                Name = "Cloudflare DNS",
+                Name = Resources.DefaultTaskDns,
                 Protocol = "icmp",
                 Target = "1.1.1.1",
                 Timeout = 3000,
@@ -110,7 +111,7 @@ namespace Pings.Configuration
             },
             new()
             {
-                Name = "Cloudflare 备用 DNS",
+                Name = Resources.DefaultTaskBackupDns,
                 Protocol = "icmp",
                 Target = "1.0.0.1",
                 Timeout = 3000,
@@ -118,7 +119,7 @@ namespace Pings.Configuration
             },
             new()
             {
-                Name = "Cloudflare DoH",
+                Name = Resources.DefaultTaskDoh,
                 Protocol = "tcp",
                 Target = "1.1.1.1",
                 Port = 443,
@@ -127,7 +128,7 @@ namespace Pings.Configuration
             },
             new()
             {
-                Name = "Cloudflare DoT",
+                Name = Resources.DefaultTaskDot,
                 Protocol = "tcp",
                 Target = "1.1.1.1",
                 Port = 853,
@@ -136,7 +137,7 @@ namespace Pings.Configuration
             },
             new()
             {
-                Name = "Cloudflare 连通性",
+                Name = Resources.DefaultTaskConnectivity,
                 Protocol = "http",
                 Target = "https://cp.cloudflare.com/generate_204",
                 Timeout = 5000,
@@ -147,7 +148,7 @@ namespace Pings.Configuration
             },
             new()
             {
-                Name = "Cloudflare 诊断页",
+                Name = Resources.DefaultTaskDiagnostics,
                 Protocol = "http",
                 Target = "https://one.one.one.one/help/",
                 Timeout = 5000,
@@ -156,7 +157,7 @@ namespace Pings.Configuration
             },
             new()
             {
-                Name = "Cloudflare Trace",
+                Name = Resources.DefaultTaskTrace,
                 Protocol = "http",
                 Target = "https://1.1.1.1/cdn-cgi/trace",
 

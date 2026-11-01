@@ -6,8 +6,10 @@ using Pings.Diagnostics;
 #if WINDOWS
 using Pings.Interop;
 #endif
+using Pings.Localization;
 using Pings.Monitoring;
 using Pings.Notifications;
+using Pings.Properties;
 using Pings.Ui;
 using Spectre.Console;
 
@@ -23,11 +25,14 @@ namespace Pings
 
         private static async Task<int> Main(string[] args)
         {
+            // 语言必须在完整解析**之前**确定：否则「未知参数」这类报错只能用默认语言输出。
+            UiLanguage.Apply(CliOptions.FindLanguage(args));
+
             CliOptions options = CliOptions.Parse(args, out string? parseError);
 
             if (parseError is not null)
             {
-                Console.Error.WriteLine($"参数错误: {parseError}");
+                Console.Error.WriteLine(string.Format(Resources.ProgramArgumentError, parseError));
                 Console.Error.WriteLine();
                 Console.Error.WriteLine(CliOptions.Usage);
                 return ExitCodes.InvalidArguments;
@@ -50,9 +55,13 @@ namespace Pings
             try
             {
                 string configPath = ResolveConfigPath(options.ConfigPath);
-                EnsureConfigExists(configPath);
+                EnsureConfigExists(configPath, options);
 
                 AppConfig config = ConfigLoader.LoadConfig(configPath);
+
+                // 命令行 --lang 优先于配置文件；两者都没写时保持启动时探测到的语言。
+                if (options.Language is not null || !string.IsNullOrWhiteSpace(config.Global.Language))
+                    UiLanguage.Apply(options.Language ?? config.Global.Language);
 
                 // 相对路径（日志文件、UDP 负载文件）都与配置文件同目录，
                 // 避免「双击启动后工作目录变了，文件却找不到」。
@@ -62,7 +71,7 @@ namespace Pings
 
                 if (!validation.IsValid)
                 {
-                    Console.Error.WriteLine($"配置文件验证失败 ({configPath}):");
+                    Console.Error.WriteLine(string.Format(Resources.ProgramConfigValidationFailed, configPath));
                     Console.Error.WriteLine(ConfigValidator.Describe(validation));
                     return ExitCodes.Configuration;
                 }
@@ -74,7 +83,7 @@ namespace Pings
                     config.Logging.LogFilePath = Path.Combine(configDirectory, config.Logging.LogFilePath);
 
                 _logging = new Logging(config.Logging);
-                _logging.Log($"{AppInfo.VersionText} 开始运行 (配置文件: {configPath})");
+                _logging.Log(string.Format(Resources.ProgramStartup, AppInfo.VersionText, configPath));
 
                 using CancellationTokenSource cts = new();
 
@@ -101,7 +110,7 @@ namespace Pings
             }
             finally
             {
-                _logging?.Log("结束运行");
+                _logging?.Log(Resources.ProgramShutdown);
                 _logging?.Dispose();
                 _logging = null;
             }
@@ -326,7 +335,7 @@ namespace Pings
                 return null;
 
             if (_logging is not null)
-                _logging.Log("通知功能已启用");
+                _logging.Log(Resources.ProgramNotificationsEnabled);
 
             return new NotificationService(_logging!, config);
         }
@@ -347,7 +356,17 @@ namespace Pings
             return File.Exists(besideExecutable) ? besideExecutable : currentDirectory;
         }
 
-        private static void EnsureConfigExists(string configPath)
+        /// <summary>
+        /// 确保配置文件存在：旧版 .txt 自动迁移；都不存在时询问是否创建默认配置。
+        /// </summary>
+        /// <remarks>
+        /// <c>--once</c> 与 <c>--no-pause</c> 下**不询问**，直接报错退出（见
+        /// <see cref="CliOptions.IsNonInteractive" />）。这两个开关的共同承诺是「不需要人盯」，
+        /// 而等待 stdin 恰好会把它变成挂起：脚本里把配置路径写错一个字母，
+        /// 进程就会静静停在那里直到超时被杀。
+        /// 非交互环境（stdin 被重定向）本来就读不到按键，同样跳过。
+        /// </remarks>
+        private static void EnsureConfigExists(string configPath, CliOptions options)
         {
             if (File.Exists(configPath))
                 return;
@@ -356,38 +375,40 @@ namespace Pings
 
             if (File.Exists(legacyPath))
             {
-                Console.WriteLine($"检测到旧版配置文件 {legacyPath}，正在转换为 JSON 格式...");
+                Console.WriteLine(string.Format(Resources.ProgramLegacyDetected, legacyPath));
                 LegacyConfigConverter.ConvertAndSave(legacyPath, configPath);
-                Console.WriteLine($"已生成 {configPath}");
+                Console.WriteLine(string.Format(Resources.ProgramLegacyGenerated, configPath));
                 return;
             }
 
-            if (!Console.IsInputRedirected
-                && AnsiConsole.Confirm($"配置文件 {configPath} 不存在，是否创建默认配置？"))
+            bool canPrompt = !options.IsNonInteractive && !Console.IsInputRedirected;
+
+            if (canPrompt
+                && AnsiConsole.Confirm(string.Format(Resources.ProgramCreateDefaultPrompt, configPath)))
             {
                 ConfigLoader.CreateDefaultConfig(configPath);
-                Console.WriteLine($"已创建默认配置文件: {configPath}");
+                Console.WriteLine(string.Format(Resources.ProgramDefaultCreated, configPath));
                 return;
             }
 
-            throw new InvalidOperationException($"未找到配置文件: {configPath}");
+            throw new InvalidOperationException(string.Format(Resources.ConfigFileNotFound, configPath));
         }
 
         private static int ReportFatal(Exception exception, CliOptions options)
         {
-            _logging?.Log($"发生未处理异常: {exception}");
+            _logging?.Log($"{Resources.ProgramUnhandledException}: {exception}");
 
-            Console.Error.WriteLine($"错误: {exception.Message}");
+            Console.Error.WriteLine(string.Format(Resources.ProgramError, exception.Message));
 
             if (options.Verbose || _logging is null)
                 Console.Error.WriteLine(exception.ToString());
 
-            if (!options.NoPause
+            if (!options.IsNonInteractive
                 && Environment.UserInteractive
                 && !Console.IsInputRedirected
                 && !Console.IsOutputRedirected)
             {
-                Console.Error.WriteLine("按任意键退出...");
+                Console.Error.WriteLine(Resources.ProgramPressAnyKey);
                 try
                 {
                     Console.ReadKey(intercept: true);

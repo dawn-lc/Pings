@@ -6,6 +6,8 @@
 ## 特性
 
 - **多协议**：ICMP 回显、TCP 建连、UDP 回声、HTTP(S) 状态码，可在同一张表里混排
+- **中英双语**：简体中文与英文完整译文，随系统语言自动选择，也可用 `--lang` / `global.language` 固定；
+  各语言资源直接编入主程序集，因此翻译**不会**破坏单文件发布（不会有 `zh-CN\` 语言目录）
 - **实时表格**：状态、延迟、抖动、滑窗丢包率、最新警告一屏呈现；运行在终端备用缓冲区中，
   退出后整屏还原，不污染滚动历史
 - **自适应布局**：窗口变窄时自动收敛列（依次丢弃日志/延迟/丢包率/目标），变矮时优先显示异常目标，
@@ -15,7 +17,7 @@
   延迟波动基于 SRTT / RTTVAR 基线，带预热与连续确认
 - **通知**：Webhook 与 SMTP 邮件，模板占位符统一单遍替换，按「任务 + 协议 + 端点」冷却，避免告警风暴
 - **日志可控**：异步单写者写入，按体积自动轮转，保留份数可配
-- **适合运维**：`--once` 单轮探测可直接接入脚本 / CI；退出码区分参数、配置、运行期、不可达
+- **适合运维**：`--once` 单轮探测可直接接入脚本 / CI（不会提问、不会等待按键）；退出码区分参数、配置、运行期、不可达
 - **零依赖**：Native AOT 单文件可执行，无需安装 .NET 运行时
 - **跨平台**：Windows 目标带控制台字体/代码页优化；`net10.0` 目标可在 Linux / macOS 运行
 
@@ -234,6 +236,7 @@ UDP 没有握手，**没有回声服务时无法区分「主机不可达」和�
 | `global.notificationCooldownSeconds` | `60` | 同一目标的通知冷却时间；`0` 不限 |
 | `global.notifyOnRecovery` | `true` | 目标恢复连通时是否也发通知 |
 | `global.enableVerboseLogging` | `false` | 输出更多统计日志 |
+| `global.language` | `"auto"` | 界面语言：`auto`（跟随系统）/ `en` / `zh-CN`；`--lang` 优先于本项 |
 | `logging.logFilePath` | `Pings.log` | 日志文件路径（相对路径基于配置文件所在目录） |
 | `logging.maxLogFileSize` | `10` | 单个日志文件上限（MB） |
 | `logging.maxLogFiles` | `5` | 保留的历史日志份数（`Pings.1.log` …） |
@@ -243,7 +246,7 @@ UDP 没有握手，**没有回声服务时无法区分「主机不可达」和�
 
 Webhook 的 `content` 与 `headers` 中可使用 `%#变量#%`，时间类变量支持 `%#CurrentTime:yyyy/MM/dd#%` 格式：
 
-`Name`、`Target`、`Endpoint`（含协议与端口）、`Protocol`、`State`（中文状态）、`Status`（状态枚举名）、
+`Name`、`Target`、`Endpoint`（含协议与端口）、`Protocol`、`State`（当前界面语言下的状态文案）、`Status`（状态枚举名）、
 `Category`、`Severity`、`Delay`、`Connect`、`Jitter`、`LossRate`（百分比数值，如 `50.0`）、`TotalLossRate`、
 `FailureRate`、`TotalFailureRate`、`Sent`、`Received`、`Lost`、`Failed`、`LastEvent`、`Warning`、`CurrentTime`。
 
@@ -262,19 +265,36 @@ Pings.exe --config ./configs/office.json
 # 只探测一轮并输出表格，适合脚本 / CI
 Pings.exe --once
 
+# 指定界面语言（默认跟随系统，也可写进配置 global.language）
+Pings.exe --lang en
+Pings.exe --lang zh-CN
+
 # 查看帮助 / 版本
 Pings.exe --help
 Pings.exe --version
 ```
+
+### 界面语言
+
+内置简体中文与英文两套完整译文，默认跟随系统语言（`auto`）；系统语言不在支持范围内时回退到英文。
+
+| 取值 | 说明 |
+|------|------|
+| `auto` | 跟随系统（默认） |
+| `en` | 英文 |
+| `zh-CN` | 简体中文。`zh`、`zh-Hans`、`zh-CHS`、`zh-SG`、`zh-TW`、`zh-Hant`、`zh-HK` 等变体都归到这里 |
+
+命令行 `--lang` 优先于配置文件的 `global.language`。
 
 ### 参数
 
 | 参数 | 说明 |
 |------|------|
 | `-c`, `--config <路径>` | 指定配置文件（也可直接用位置参数） |
-| `--once` | 每个目标只探测一次，输出静态表格后退出 |
+| `--once` | 每个目标只探测一次，输出静态表格后退出；隐含 `--no-pause`，不会提问也不会等待按键 |
+| `--lang <语言>` | 界面语言：`auto` / `en` / `zh-CN`（默认跟随配置，覆盖 `global.language`） |
 | `--no-color` | 关闭彩色输出（ANSI 与备用缓冲区不受影响） |
-| `--no-pause` | 出错时不再等待按键 |
+| `--no-pause` | 出错或缺少配置时一律不等待输入 |
 | `--verbose` | 出错时输出完整堆栈 |
 | `-h`, `--help` | 帮助 |
 | `-v`, `--version` | 版本号 |

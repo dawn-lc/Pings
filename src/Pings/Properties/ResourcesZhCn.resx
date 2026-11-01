@@ -1,0 +1,660 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    简体中文资源。文件名不带 .Culture 段，由 csproj 的 LogicalName 指定成
+    Pings.Properties.Resources.zh-CN.resources 编进主程序集（见 EmbeddedResourceManager）。
+
+    占位符语义必须与中性资源（英文）一致：{0}/{1}/… 指的是同一批参数，
+    「顺序可以为排版而调整，语义不能变」。LocalizationTests 会校验键集与占位符集合。
+  -->
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- ── CLI ── -->
+  <data name="Usage" xml:space="preserve">
+    <value>用法: Pings [配置文件] [选项]
+
+参数:
+  配置文件                 JSON 配置路径，默认按当前目录 config.json、
+                          再按程序目录 config.json 查找
+
+选项:
+  -c, --config &lt;路径&gt;     指定配置文件
+      --once               只探测一轮并输出表格后退出（脚本/CI，不提问）
+      --lang &lt;语言&gt;       界面语言：auto / en / zh-CN（默认跟随配置）
+      --no-color           关闭彩色输出
+      --no-pause           出错或缺配置时一律不等待输入
+      --verbose            出错时输出完整堆栈
+  -h, --help               显示帮助
+  -v, --version            显示版本
+
+运行时快捷键:
+  C  确认当前警告
+  Q  退出
+
+退出码:
+  0 正常结束      1 参数错误      2 配置错误
+  3 运行期错误    4 存在不可达目标（--once）</value>
+  </data>
+  <data name="CliMissingOptionValue">
+    <value>参数 {0} 缺少值</value>
+  </data>
+  <data name="CliUnknownOption">
+    <value>未知参数: {0}</value>
+  </data>
+  <data name="CliMultipleConfigFiles">
+    <value>只能指定一个配置文件（多余的参数: {0}）</value>
+  </data>
+  <data name="CliInvalidLanguage">
+    <value>--lang 的值 "{0}" 无效，可选 {1}</value>
+  </data>
+  <data name="ExitCodeSuccess">
+    <value>正常结束</value>
+  </data>
+  <data name="ExitCodeInvalidArguments">
+    <value>命令行参数错误</value>
+  </data>
+  <data name="ExitCodeConfiguration">
+    <value>配置文件错误</value>
+  </data>
+  <data name="ExitCodeRuntimeError">
+    <value>运行期错误</value>
+  </data>
+  <data name="ExitCodeUnreachable">
+    <value>存在不可达目标</value>
+  </data>
+  <data name="ExitCodeUnknown">
+    <value>未知退出码</value>
+  </data>
+
+  <!-- ── 配置加载 ── -->
+  <data name="ConfigFileNotFound">
+    <value>配置文件不存在: {0}</value>
+  </data>
+  <data name="ConfigContentEmpty">
+    <value>配置内容为空</value>
+  </data>
+  <data name="ConfigParseFailed">
+    <value>配置文件解析失败: {0}</value>
+  </data>
+  <data name="ConfigSaveFailed">
+    <value>配置文件保存失败: {0}</value>
+  </data>
+
+  <!-- ── 默认任务名（Cloudflare 为专有名词，不翻译） ── -->
+  <data name="DefaultTaskDns">
+    <value>Cloudflare DNS</value>
+  </data>
+  <data name="DefaultTaskBackupDns">
+    <value>Cloudflare 备用 DNS</value>
+  </data>
+  <data name="DefaultTaskDoh">
+    <value>Cloudflare DoH</value>
+  </data>
+  <data name="DefaultTaskDot">
+    <value>Cloudflare DoT</value>
+  </data>
+  <data name="DefaultTaskConnectivity">
+    <value>Cloudflare 连通性</value>
+  </data>
+  <data name="DefaultTaskDiagnostics">
+    <value>Cloudflare 诊断页</value>
+  </data>
+  <data name="DefaultTaskTrace">
+    <value>Cloudflare Trace</value>
+  </data>
+
+  <!-- ── 配置校验：任务 ── -->
+  <data name="ValidationAtLeastOneTask">
+    <value>至少需要一个监控任务 (tasks)</value>
+  </data>
+  <data name="ValidationTaskNameRequired">
+    <value>{0}: 任务名称不能为空</value>
+  </data>
+  <data name="ValidationTaskNameDuplicate">
+    <value>{0}: 任务名称重复，实时表格将无法区分</value>
+  </data>
+  <data name="ValidationProtocolInvalid">
+    <value>{0}: protocol "{1}" 无效，可选 icmp / tcp / udp / http</value>
+  </data>
+  <data name="ValidationEndpointDuplicate">
+    <value>{0}: 目标重复，会重复探测同一端点</value>
+  </data>
+  <data name="ValidationTimeoutOutOfRange">
+    <value>{0}: timeout 必须在 1~60000 毫秒之间</value>
+  </data>
+  <data name="ValidationIntervalOutOfRange">
+    <value>{0}: interval 必须在 0~60000 毫秒之间（0 表示与 timeout 相同）</value>
+  </data>
+  <data name="ValidationIntervalLessThanTimeout">
+    <value>{0}: interval 小于 timeout，实际探测间隔会被探测耗时撑长</value>
+  </data>
+  <data name="ValidationMaxRecentPacketsOutOfRange">
+    <value>{0}: maxRecentPackets 必须在 1~100000 之间</value>
+  </data>
+  <data name="ValidationSignificantDelayThresholdOutOfRange">
+    <value>{0}: significantDelayThreshold 必须在 0~60000 毫秒之间</value>
+  </data>
+  <data name="ValidationPacketLossDurationOutOfRange">
+    <value>{0}: packetLossDuration 必须在 0~86400 秒之间</value>
+  </data>
+  <data name="ValidationPacketLossCountInvalid">
+    <value>{0}: packetLossCount 必须为非负整数</value>
+  </data>
+  <data name="ValidationLossFlapWindowOutOfRange">
+    <value>{0}: lossFlapWindowSeconds 必须在 0~86400 秒之间</value>
+  </data>
+  <data name="ValidationLossFlapCountInvalid">
+    <value>{0}: lossFlapCount 必须为非负整数</value>
+  </data>
+  <data name="ValidationLossThresholdsBothZero">
+    <value>{0}: 丢包持续时长与丢包次数阈值均为 0，不会触发中断告警</value>
+  </data>
+  <data name="ValidationTargetRequired">
+    <value>{0}: 目标地址不能为空</value>
+  </data>
+  <data name="ValidationTargetNotHttpUrl">
+    <value>{0}: target "{1}" 不是有效的 http/https 地址</value>
+  </data>
+  <data name="ValidationTargetNotHost">
+    <value>{0}: 目标地址 "{1}" 不是有效的 IP 或域名</value>
+  </data>
+  <data name="ValidationPortRequired">
+    <value>{0}: {1} 需要 1~65535 的端口 (port)</value>
+  </data>
+  <data name="ValidationPortIgnored">
+    <value>{0}: {1} 不使用 port，该字段被忽略</value>
+  </data>
+  <data name="ValidationPayloadSizeOutOfRange">
+    <value>{0}: payloadSize 必须在 0~65500 之间</value>
+  </data>
+  <data name="ValidationHttpMethodNotAllowed">
+    <value>{0}: httpMethod 只允许 HEAD 或 GET</value>
+  </data>
+  <data name="ValidationExpectedStatusOutOfRange">
+    <value>{0}: expectedStatus 包含非法状态码 {1}（100~599）</value>
+  </data>
+
+  <!-- ── 配置校验：全局 / 日志 / 通知 ── -->
+  <data name="ValidationMissingGlobalSection">
+    <value>缺少全局配置 (global)</value>
+  </data>
+  <data name="ValidationUiRefreshIntervalOutOfRange">
+    <value>global.uiRefreshInterval 必须在 200~60000 毫秒之间</value>
+  </data>
+  <data name="ValidationAutoConfirmIntervalOutOfRange">
+    <value>global.autoConfirmWarningInterval 必须在 0~86400 秒之间</value>
+  </data>
+  <data name="ValidationNotificationCooldownOutOfRange">
+    <value>global.notificationCooldownSeconds 必须在 0~86400 秒之间</value>
+  </data>
+  <data name="ValidationLanguageInvalid">
+    <value>global.language "{0}" 无效，可选 {1}</value>
+  </data>
+  <data name="ValidationMissingLoggingSection">
+    <value>缺少日志配置 (logging)</value>
+  </data>
+  <data name="ValidationLogFilePathRequired">
+    <value>logging.logFilePath 不能为空</value>
+  </data>
+  <data name="ValidationMaxLogFileSizeOutOfRange">
+    <value>logging.maxLogFileSize 必须在 1~1024 MB 之间</value>
+  </data>
+  <data name="ValidationMaxLogFilesOutOfRange">
+    <value>logging.maxLogFiles 必须在 1~100 之间</value>
+  </data>
+  <data name="ValidationMissingNotificationsSection">
+    <value>缺少通知配置 (notifications)</value>
+  </data>
+  <data name="ValidationWebhookUrlInvalid">
+    <value>notifications.webhook.url 必须是有效的 http/https 地址</value>
+  </data>
+  <data name="ValidationWebhookMethodRequired">
+    <value>notifications.webhook.method 不能为空</value>
+  </data>
+  <data name="ValidationWebhookEmptyHeaderKey">
+    <value>notifications.webhook.headers 存在空键名</value>
+  </data>
+  <data name="ValidationWebhookAuthTokenRequired">
+    <value>notifications.webhook 配置了 authType 但 authToken 为空</value>
+  </data>
+  <data name="ValidationEmailSmtpServerRequired">
+    <value>notifications.email.smtpServer 不能为空</value>
+  </data>
+  <data name="ValidationEmailPortOutOfRange">
+    <value>notifications.email.port 必须在 1~65535 之间</value>
+  </data>
+  <data name="ValidationEmailFromInvalid">
+    <value>notifications.email.from 不是有效的邮箱地址</value>
+  </data>
+  <data name="ValidationEmailToRequired">
+    <value>notifications.email.to 至少需要一个收件人</value>
+  </data>
+  <data name="ValidationEmailToInvalid">
+    <value>notifications.email.to 包含无效的邮箱地址</value>
+  </data>
+  <data name="ValidationEmailPasswordRequired">
+    <value>notifications.email 配置了 username 但 password 为空</value>
+  </data>
+
+  <!-- ── 旧配置迁移 ── -->
+  <data name="LegacyConfigEmpty">
+    <value>旧版配置文件为空或格式错误</value>
+  </data>
+  <data name="LegacyLineUnparsable">
+    <value>无法解析的配置行: {0}</value>
+  </data>
+
+  <!-- ── 日志 ── -->
+  <data name="LogFileUnavailable">
+    <value>日志文件不可用，已禁用文件日志: {0}</value>
+  </data>
+  <data name="LogWriterCrashed">
+    <value>日志写入循环异常退出: {0}</value>
+  </data>
+
+  <!-- ── 探测状态 ── -->
+  <data name="StatusUnknown">
+    <value>未知状态</value>
+  </data>
+  <data name="StatusSuccess">
+    <value>通讯正常</value>
+  </data>
+  <data name="StatusTimeout">
+    <value>请求超时</value>
+  </data>
+  <data name="StatusNoReply">
+    <value>无回应</value>
+  </data>
+  <data name="StatusUnreachable">
+    <value>目标不可达</value>
+  </data>
+  <data name="StatusPortClosed">
+    <value>端口关闭</value>
+  </data>
+  <data name="StatusDnsFailure">
+    <value>域名解析失败</value>
+  </data>
+  <data name="StatusTlsFailure">
+    <value>TLS握手失败</value>
+  </data>
+  <data name="StatusHttpStatusUnexpected">
+    <value>状态码异常</value>
+  </data>
+  <data name="StatusResponseTimeout">
+    <value>响应超时</value>
+  </data>
+  <data name="StatusProtocolError">
+    <value>协议错误</value>
+  </data>
+  <data name="StatusLocalError">
+    <value>本地网络错误</value>
+  </data>
+  <data name="StatusFallback">
+    <value>未知错误</value>
+  </data>
+
+  <!-- ── ICMP 原始状态 ── -->
+  <data name="IpStatusBadDestination">
+    <value>目标地址错误</value>
+  </data>
+  <data name="IpStatusBadHeader">
+    <value>头部无效</value>
+  </data>
+  <data name="IpStatusBadOption">
+    <value>选项无效</value>
+  </data>
+  <data name="IpStatusBadRoute">
+    <value>路由无效</value>
+  </data>
+  <data name="IpStatusDestinationHostUnreachable">
+    <value>目标主机不可达</value>
+  </data>
+  <data name="IpStatusDestinationNetworkUnreachable">
+    <value>目标网络不可达</value>
+  </data>
+  <data name="IpStatusDestinationPortUnreachable">
+    <value>目标端口不可达</value>
+  </data>
+  <data name="IpStatusDestinationProhibited">
+    <value>目标禁止访问</value>
+  </data>
+  <data name="IpStatusDestinationScopeMismatch">
+    <value>目标范围不匹配</value>
+  </data>
+  <data name="IpStatusDestinationUnreachable">
+    <value>目标不可达</value>
+  </data>
+  <data name="IpStatusHardwareError">
+    <value>硬件错误</value>
+  </data>
+  <data name="IpStatusIcmpError">
+    <value>ICMP协议错误</value>
+  </data>
+  <data name="IpStatusNoResources">
+    <value>网络资源不足</value>
+  </data>
+  <data name="IpStatusPacketTooBig">
+    <value>数据包过大</value>
+  </data>
+  <data name="IpStatusParameterProblem">
+    <value>参数问题</value>
+  </data>
+  <data name="IpStatusSourceQuench">
+    <value>数据包被放弃</value>
+  </data>
+  <data name="IpStatusSuccess">
+    <value>通讯正常</value>
+  </data>
+  <data name="IpStatusTimedOut">
+    <value>请求超时</value>
+  </data>
+  <data name="IpStatusTimeExceeded">
+    <value>生存时间过期</value>
+  </data>
+  <data name="IpStatusTtlExpired">
+    <value>TTL值过期</value>
+  </data>
+  <data name="IpStatusTtlReassemblyTimeExceeded">
+    <value>重组超时</value>
+  </data>
+  <data name="IpStatusUnknown">
+    <value>未知状态</value>
+  </data>
+  <data name="IpStatusUnrecognizedNextHeader">
+    <value>下一标头无法识别</value>
+  </data>
+  <data name="IpStatusFallback">
+    <value>未知错误</value>
+  </data>
+
+  <!-- ── 套接字错误 ── -->
+  <data name="SocketTimedOut">
+    <value>连接超时</value>
+  </data>
+  <data name="SocketConnectionRefused">
+    <value>连接被拒绝</value>
+  </data>
+  <data name="SocketConnectionReset">
+    <value>连接被重置</value>
+  </data>
+  <data name="SocketConnectionAborted">
+    <value>连接被中止</value>
+  </data>
+  <data name="SocketHostNotFound">
+    <value>域名不存在</value>
+  </data>
+  <data name="SocketNoData">
+    <value>域名无解析结果</value>
+  </data>
+  <data name="SocketNetworkUnreachable">
+    <value>网络不可达</value>
+  </data>
+  <data name="SocketHostUnreachable">
+    <value>主机不可达</value>
+  </data>
+  <data name="SocketNetworkDown">
+    <value>网络已断开</value>
+  </data>
+  <data name="SocketHostDown">
+    <value>主机已关闭</value>
+  </data>
+  <data name="SocketAccessDenied">
+    <value>访问被拒绝</value>
+  </data>
+  <data name="SocketTooManyOpenSockets">
+    <value>套接字资源不足</value>
+  </data>
+  <data name="SocketNoBufferSpaceAvailable">
+    <value>缓冲区不足</value>
+  </data>
+
+  <!-- ── 告警状态机 ── -->
+  <data name="EventNone">
+    <value>暂无事件</value>
+  </data>
+  <data name="AlarmOutageCount">
+    <value>连续无响应 {0} 次</value>
+  </data>
+  <data name="AlarmOutageSeconds">
+    <value>连续无响应 {0}s</value>
+  </data>
+  <data name="AlarmOutageConfirmed">
+    <value>连续无响应 {0}s 已确认</value>
+  </data>
+  <data name="AlarmFlapping">
+    <value>窗口 {1}s 内短时中断 {0} 次</value>
+  </data>
+  <data name="EventDelaySpike">
+    <value>延迟升高 {0}ms → {1}ms</value>
+  </data>
+  <data name="EventSuccess">
+    <value>{0} {1}ms</value>
+  </data>
+  <data name="EventFailure">
+    <value>{0}: {1}</value>
+  </data>
+
+  <!-- ── 传输层 ── -->
+  <data name="ProbeCanceled">
+    <value>探测被取消</value>
+  </data>
+  <data name="HttpTargetInvalid">
+    <value>HTTP 探测需要 http/https 绝对地址，实际为 "{0}"</value>
+  </data>
+  <data name="TransportConnectTimeout">
+    <value>连接超时({0}ms)</value>
+  </data>
+  <data name="TransportResponseTimeout">
+    <value>响应超时({0}ms)</value>
+  </data>
+  <data name="TransportNoEcho">
+    <value>未收到回声({0}ms)</value>
+  </data>
+  <data name="TransportEmptyEcho">
+    <value>回声为空</value>
+  </data>
+  <data name="TransportUdpPortUnreachable">
+    <value>端口不可达</value>
+  </data>
+
+  <!-- ── UDP 负载 ── -->
+  <data name="UdpBase64Empty">
+    <value>udpPayload 的 base64: 前缀后没有内容</value>
+  </data>
+  <data name="UdpBase64Invalid">
+    <value>udpPayload 的 base64 内容无法解码（检查字符集与末尾填充）</value>
+  </data>
+  <data name="UdpPayloadEmptyAfterDecode">
+    <value>udpPayload 解码结果为空</value>
+  </data>
+  <data name="UdpPayloadTooLarge">
+    <value>udpPayload 有 {0} 字节，超过 UDP 上限 {1} 字节</value>
+  </data>
+  <data name="UdpFilePrefixNeedsPath">
+    <value>udpPayload 的 file: 前缀后没有路径</value>
+  </data>
+  <data name="UdpFileNotFound">
+    <value>udpPayload 指定的文件不存在: {0}</value>
+  </data>
+  <data name="UdpFileTooLarge">
+    <value>udpPayload 文件 {0} 有 {1} 字节，超过 UDP 上限 {2} 字节</value>
+  </data>
+  <data name="UdpFileReadFailed">
+    <value>udpPayload 文件读取失败: {0}</value>
+  </data>
+  <data name="UdpFileEmpty">
+    <value>udpPayload 文件为空: {0}</value>
+  </data>
+
+  <!-- ── 监控编排日志 ── -->
+  <data name="MonitorWarningAcknowledged">
+    <value>{0}({1}) 已确认警告: {2}</value>
+  </data>
+  <data name="MonitorNotificationsPending">
+    <value>仍有通知在发送中，已跳过等待</value>
+  </data>
+  <data name="MonitorAlarmLogged">
+    <value>{0} 告警: {1}</value>
+  </data>
+  <data name="MonitorVerboseStatistics">
+    <value>{0} 统计: 发送 {1} / 接收 {2} / 丢包率 {3} / 故障率 {4}</value>
+  </data>
+  <data name="MonitorNotificationFailed">
+    <value>通知发送失败: {0} - {1}</value>
+  </data>
+
+  <!-- ── 通知 ── -->
+  <data name="NotificationWebhookSucceeded">
+    <value>已触发Webhook，状态码: {0}</value>
+  </data>
+  <data name="NotificationWebhookNonSuccess">
+    <value>Webhook返回非成功状态码: {0} {1}</value>
+  </data>
+  <data name="NotificationWebhookFailed">
+    <value>Webhook触发失败: {0} - {1}</value>
+  </data>
+  <data name="NotificationEmailSubject">
+    <value>[Pings] {0} ({1}) 状态：{2}</value>
+  </data>
+  <data name="NotificationEmailSent">
+    <value>已发送通知到: {0}</value>
+  </data>
+  <data name="NotificationEmailAuthFailed">
+    <value>Email认证失败 - SMTP服务器: {0}, 错误: {1}</value>
+  </data>
+  <data name="NotificationEmailFailed">
+    <value>Email发送失败: {0} - {1}</value>
+  </data>
+  <data name="NotificationAlertTitle">
+    <value>告警</value>
+  </data>
+  <data name="NotificationLabelTaskName">
+    <value>任务名称</value>
+  </data>
+  <data name="NotificationLabelEndpoint">
+    <value>目标端点</value>
+  </data>
+  <data name="NotificationLabelProtocol">
+    <value>探测协议</value>
+  </data>
+  <data name="NotificationLabelStatus">
+    <value>当前状态</value>
+  </data>
+  <data name="NotificationLabelDelay">
+    <value>网络延迟</value>
+  </data>
+  <data name="NotificationLabelLossRate">
+    <value>丢包率</value>
+  </data>
+  <data name="NotificationLabelFailureRate">
+    <value>故障率</value>
+  </data>
+  <data name="NotificationLabelTotalLossRate">
+    <value>累计丢包率</value>
+  </data>
+  <data name="NotificationLabelLastEvent">
+    <value>最近事件</value>
+  </data>
+  <data name="NotificationLabelTimestamp">
+    <value>发生时间</value>
+  </data>
+  <data name="NotificationLineFormat">
+    <value>{0}：{1}</value>
+  </data>
+  <data name="NotificationLossRateWithWindow">
+    <value>丢包率(窗口 {0} 次)：{1}</value>
+  </data>
+  <data name="NotificationFailureRateWithWindow">
+    <value>故障率(窗口 {0} 次)：{1}</value>
+  </data>
+
+  <!-- ── 程序入口 ── -->
+  <data name="ProgramArgumentError">
+    <value>参数错误: {0}</value>
+  </data>
+  <data name="ProgramConfigValidationFailed">
+    <value>配置文件验证失败 ({0}):</value>
+  </data>
+  <data name="ProgramStartup">
+    <value>{0} 开始运行 (配置文件: {1})</value>
+  </data>
+  <data name="ProgramShutdown">
+    <value>结束运行</value>
+  </data>
+  <data name="ProgramNotificationsEnabled">
+    <value>通知功能已启用</value>
+  </data>
+  <data name="ProgramLegacyDetected">
+    <value>检测到旧版配置文件 {0}，正在转换为 JSON 格式...</value>
+  </data>
+  <data name="ProgramLegacyGenerated">
+    <value>已生成 {0}</value>
+  </data>
+  <data name="ProgramCreateDefaultPrompt">
+    <value>配置文件 {0} 不存在，是否创建默认配置？</value>
+  </data>
+  <data name="ProgramDefaultCreated">
+    <value>已创建默认配置文件: {0}</value>
+  </data>
+  <data name="ProgramUnhandledException">
+    <value>发生未处理异常</value>
+  </data>
+  <data name="ProgramError">
+    <value>错误: {0}</value>
+  </data>
+  <data name="ProgramPressAnyKey">
+    <value>按任意键退出...</value>
+  </data>
+
+  <!-- ── 界面 ── -->
+  <data name="DateTimeFormat">
+    <value>yyyy年MM月dd日 HH:mm:ss</value>
+  </data>
+  <data name="MonitorTitle">
+    <value>{0} 网络监测</value>
+  </data>
+  <data name="MonitorColumnName">
+    <value>名称</value>
+  </data>
+  <data name="MonitorColumnTarget">
+    <value>目标</value>
+  </data>
+  <data name="MonitorColumnStatus">
+    <value>状态</value>
+  </data>
+  <data name="MonitorColumnDelay">
+    <value>延迟</value>
+  </data>
+  <data name="MonitorColumnLoss">
+    <value>丢包率</value>
+  </data>
+  <data name="MonitorColumnLog">
+    <value>警告/日志</value>
+  </data>
+  <data name="MonitorNoTasks">
+    <value>无任务</value>
+  </data>
+  <data name="MonitorCaptionAcknowledge">
+    <value>确认警告(C) / 退出(Q)</value>
+  </data>
+  <data name="MonitorHiddenTargets">
+    <value>另有 {0} 个目标未显示（已优先显示异常目标）</value>
+  </data>
+  <data name="MonitorColumnsTrimmed">
+    <value>窗口较窄，已隐藏部分列</value>
+  </data>
+  <data name="MonitorDroppedWarnings">
+    <value>已丢弃 {0} 条旧告警</value>
+  </data>
+</root>

@@ -8,7 +8,16 @@ public sealed class UdpPayloadResolverTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "pings-udp-payload-" + Guid.NewGuid().ToString("N"));
 
+    // 用例断言中文错误提示，固定界面语言才能在英文环境下稳定跑。
+    private readonly CultureScope _culture = CultureScope.Chinese();
+
     public UdpPayloadResolverTests() => Directory.CreateDirectory(_directory);
+
+    public void Dispose()
+    {
+        _culture.Dispose();
+        Directory.Delete(_directory, recursive: true);
+    }
 
     private string PathInTemp(string name) => Path.Combine(_directory, name);
 
@@ -143,11 +152,5 @@ public sealed class UdpPayloadResolverTests : IDisposable
 
         Assert.True(UdpPayloadResolver.TryValidate(path, _directory, out string? error));
         Assert.Null(error);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_directory))
-            Directory.Delete(_directory, recursive: true);
     }
 }

@@ -54,7 +54,8 @@
         <!-- 同步给 SDK，让 exe 的文件属性（资源管理器里看到的）与命令行版本输出一致 -->
         <Version>$(AppVersion)</Version>
 
-        <NeutralLanguage>zh-CN</NeutralLanguage>
+        <!-- 中性资源是英文：未受支持的系统语言一律回退到英文，而不是回退到某个具体译文。 -->
+        <NeutralLanguage>en</NeutralLanguage>
 
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
@@ -90,6 +91,32 @@
     <ItemGroup>
         <PackageReference Include="MailKit" Version="4.18.2"></PackageReference>
         <PackageReference Include="Spectre.Console" Version="0.57.2"></PackageReference>
+    </ItemGroup>
+
+    <!--
+      ============================================================================
+      多语言资源：各语言的 .resources 直接编进主程序集
+      ============================================================================
+
+      做法与原因（Native AOT 必须这样）：
+        · 常规做法是靠 satellite 程序集（zh-CN\Pings.resources.dll），但 AOT 无法把
+          satellite 打进 exe —— 产物必然是「exe + 语言目录」，与单文件发布冲突。
+        · 这里改由 LogicalName 把每种语言都塞进主程序集，资源名统一为
+          {BaseName}.resources（中性）与 {BaseName}.{culture}.resources，
+          再由 Pings.Properties.EmbeddedResourceManager 按 culture 链自行查找。
+
+      **文件名不能带 .Culture 段**（写 ResourcesZhCn.resx，不能写 Resources.zh-CN.resx）：
+      带合法 culture 名的文件名会被 SDK 的 AssignCulture 识别成文化资源，
+      于是自动生成 satellite 程序集 —— 那正是我们要避免的。
+      资源名由下面的 LogicalName 指定，与文件名无关，所以 ZhCn 只是给人看的。
+
+      AOT 注意：.resx 必须先在编译期被 GenerateResource 转成 .resources（默认行为），
+      ResourceReader 本身对 AOT 安全；不要改用 ResourceManager 查表，
+      它只在 satellite 里找 culture 资源，编进主程序集后会静默只返回英文。
+    -->
+    <ItemGroup>
+        <EmbeddedResource Update="Properties\Resources.resx" LogicalName="Pings.Properties.Resources.resources" />
+        <EmbeddedResource Update="Properties\ResourcesZhCn.resx" LogicalName="Pings.Properties.Resources.zh-CN.resources" />
     </ItemGroup>
 
     <!--

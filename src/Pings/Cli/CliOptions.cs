@@ -1,5 +1,9 @@
 namespace Pings.Cli
 {
+    using System.Globalization;
+    using Pings.Localization;
+    using Pings.Properties;
+
     /// <summary>进程退出码约定。</summary>
     public static class ExitCodes
     {
@@ -16,12 +20,12 @@ namespace Pings.Cli
 
         public static string Describe(int code) => code switch
         {
-            Success => "正常结束",
-            InvalidArguments => "命令行参数错误",
-            Configuration => "配置文件错误",
-            RuntimeError => "运行期错误",
-            Unreachable => "存在不可达目标",
-            _ => "未知退出码"
+            Success => Resources.ExitCodeSuccess,
+            InvalidArguments => Resources.ExitCodeInvalidArguments,
+            Configuration => Resources.ExitCodeConfiguration,
+            RuntimeError => Resources.ExitCodeRuntimeError,
+            Unreachable => Resources.ExitCodeUnreachable,
+            _ => Resources.ExitCodeUnknown
         };
     }
 
@@ -35,38 +39,50 @@ namespace Pings.Cli
         bool ShowVersion,
         bool NoColor,
         bool NoPause,
-        bool Verbose)
+        bool Verbose,
+        string? Language)
     {
-        public const string Usage = """
-            用法: Pings [配置文件] [选项]
+        /// <summary>完整用法说明（随当前语言变化）。</summary>
+        public static string Usage => Resources.Usage;
 
-            参数:
-              配置文件                 JSON 配置路径，默认按当前目录 config.json、
-                                      再按程序目录 config.json 查找
+        /// <summary>
+        /// 本次运行不应等人输入（不提问、出错不暂停）。
+        /// </summary>
+        /// <remarks>
+        /// <c>--once</c> 的定位就是「适合脚本/CI」：它就算没配 <c>--no-pause</c>
+        /// 也不能在末尾停住等按键，否则脚本里一次配置路径笔误就会变成挂起。
+        /// 两个开关的语义因此收成一个属性，避免各处各写一遍判断而漏掉一处。
+        /// </remarks>
+        public bool IsNonInteractive => NoPause || Once;
 
-            选项:
-              -c, --config <路径>      指定配置文件
-                  --once               只探测一轮并输出表格后退出（适合脚本/CI）
-                  --no-color           关闭彩色输出
-                  --no-pause           出错时不再等待按键
-                  --verbose            出错时输出完整堆栈
-              -h, --help               显示帮助
-              -v, --version            显示版本
+        /// <summary>
+        /// 从参数里摘出 <c>--lang</c> 的值，不做完整解析。
+        /// </summary>
+        /// <remarks>
+        /// 语言必须在完整解析**之前**确定：否则「未知参数」这类报错只能用默认语言输出，
+        /// 而用户明明已经用 --lang 指定了语言。这里只做最小扫描，
+        /// 真正的校验仍由 <see cref="Parse" /> 与配置校验负责。
+        /// </remarks>
+        public static string? FindLanguage(string[] args)
+        {
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "--")
+                    return null;
 
-            运行时快捷键:
-              C  确认当前警告
-              Q  退出
+                if (args[i] is "--lang")
+                    return args[i + 1];
+            }
 
-            退出码:
-              0 正常结束      1 参数错误      2 配置错误
-              3 运行期错误    4 存在不可达目标（--once）
-            """;
+            return null;
+        }
 
         public static CliOptions Parse(string[] args, out string? error)
         {
             error = null;
 
             string? configPath = null;
+            string? language = null;
             bool once = false;
             bool showHelp = false;
             bool showVersion = false;
@@ -121,15 +137,34 @@ namespace Pings.Cli
                         case "--config":
                             if (i + 1 >= args.Length)
                             {
-                                error = $"参数 {arg} 缺少路径";
+                                error = string.Format(Resources.CliMissingOptionValue, arg);
                                 return Default();
                             }
 
                             configPath = args[++i];
                             break;
 
+                        case "--lang":
+                            if (i + 1 >= args.Length)
+                            {
+                                error = string.Format(Resources.CliMissingOptionValue, arg);
+                                return Default();
+                            }
+
+                            language = args[++i];
+
+                            // 非法值必须当场报错：静默忽略会让用户以为语言已切换，
+                            // 而界面其实还在用别的语言（auto 也一样要能进）。
+                            if (!UiLanguage.TryResolve(language, out CultureInfo? _))
+                            {
+                                error = string.Format(Resources.CliInvalidLanguage, language, UiLanguage.SupportedMarkerList);
+                                return Default();
+                            }
+
+                            break;
+
                         default:
-                            error = $"未知参数: {arg}";
+                            error = string.Format(Resources.CliUnknownOption, arg);
                             return Default();
                     }
 
@@ -138,7 +173,7 @@ namespace Pings.Cli
 
                 if (positionalSeen || configPath is not null)
                 {
-                    error = $"只能指定一个配置文件（多余的参数: {arg}）";
+                    error = string.Format(Resources.CliMultipleConfigFiles, arg);
                     return Default();
                 }
 
@@ -146,9 +181,9 @@ namespace Pings.Cli
                 positionalSeen = true;
             }
 
-            return new CliOptions(configPath, once, showHelp, showVersion, noColor, noPause, verbose);
+            return new CliOptions(configPath, once, showHelp, showVersion, noColor, noPause, verbose, language);
 
-            CliOptions Default() => new(null, false, false, false, false, false, false);
+            CliOptions Default() => new(null, false, false, false, false, false, false, null);
         }
     }
 }

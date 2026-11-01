@@ -6,6 +6,7 @@ using MimeKit;
 using Pings.Configuration;
 using Pings.Diagnostics;
 using Pings.Monitoring;
+using Pings.Properties;
 
 namespace Pings.Notifications
 {
@@ -88,16 +89,16 @@ namespace Pings.Notifications
                 using HttpResponseMessage response = await _httpClient.SendAsync(request, token).ConfigureAwait(false);
 
                 if (response.IsSuccessStatusCode)
-                    _logging.Log($"已触发Webhook，状态码: {(int)response.StatusCode}");
+                    _logging.Log(string.Format(Resources.NotificationWebhookSucceeded, (int)response.StatusCode));
                 else
-                    _logging.Log($"Webhook返回非成功状态码: {(int)response.StatusCode} {response.ReasonPhrase}");
+                    _logging.Log(string.Format(Resources.NotificationWebhookNonSuccess, (int)response.StatusCode, response.ReasonPhrase));
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
             }
             catch (Exception ex)
             {
-                _logging.Log($"Webhook触发失败: {ex.GetType().Name} - {ex.Message}");
+                _logging.Log(string.Format(Resources.NotificationWebhookFailed, ex.GetType().Name, ex.Message));
             }
         }
 
@@ -116,7 +117,7 @@ namespace Pings.Notifications
                         message.To.Add(MailboxAddress.Parse(address));
                 }
 
-                message.Subject = $"[{AppInfo.ProductName}] {snapshot.Name} ({snapshot.Endpoint}) 状态：{snapshot.StatusText}";
+                message.Subject = string.Format(Resources.NotificationEmailSubject, snapshot.Name, snapshot.Endpoint, snapshot.StatusText);
 
                 BodyBuilder body = new()
                 {
@@ -141,18 +142,18 @@ namespace Pings.Notifications
                 await client.SendAsync(message, token).ConfigureAwait(false);
                 await client.DisconnectAsync(true, token).ConfigureAwait(false);
 
-                _logging.Log($"已发送通知到: {string.Join(", ", email.To)}");
+                _logging.Log(string.Format(Resources.NotificationEmailSent, string.Join(", ", email.To)));
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
             }
             catch (AuthenticationException ex)
             {
-                _logging.Log($"Email认证失败 - SMTP服务器: {email.SmtpServer}, 错误: {ex.Message}");
+                _logging.Log(string.Format(Resources.NotificationEmailAuthFailed, email.SmtpServer, ex.Message));
             }
             catch (Exception ex)
             {
-                _logging.Log($"Email发送失败: {ex.GetType().Name} - {ex.Message}");
+                _logging.Log(string.Format(Resources.NotificationEmailFailed, ex.GetType().Name, ex.Message));
             }
         }
 
@@ -185,18 +186,19 @@ namespace Pings.Notifications
         private static string BuildPlainTextBody(ProbeTaskSnapshot snapshot)
         {
             StringBuilder body = new();
-            body.AppendLine($"{AppInfo.ProductName} 告警");
+            body.AppendLine($"{AppInfo.ProductName} {Resources.NotificationAlertTitle}");
             body.AppendLine();
-            body.AppendLine($"任务名称：{snapshot.Name}");
-            body.AppendLine($"目标端点：{snapshot.Endpoint}");
-            body.AppendLine($"探测协议：{snapshot.Protocol.ToConfigString()}");
-            body.AppendLine($"当前状态：{snapshot.StatusText}");
-            body.AppendLine($"网络延迟：{snapshot.DelayText}");
-            body.AppendLine($"丢包率(窗口 {snapshot.Statistics.WindowCount} 次)：{snapshot.LossText}");
-            body.AppendLine($"故障率(窗口 {snapshot.Statistics.WindowCount} 次)：{snapshot.FailureText}");
-            body.AppendLine($"累计丢包率：{snapshot.Statistics.TotalLossRate * 100:0.0}%");
-            body.AppendLine($"最近事件：{snapshot.LastEvent}");
-            body.AppendLine($"发生时间：{snapshot.Timestamp:yyyy-MM-dd HH:mm:ss}");
+
+            AppendLine(body, Resources.NotificationLabelTaskName, snapshot.Name);
+            AppendLine(body, Resources.NotificationLabelEndpoint, snapshot.Endpoint);
+            AppendLine(body, Resources.NotificationLabelProtocol, snapshot.Protocol.ToConfigString());
+            AppendLine(body, Resources.NotificationLabelStatus, snapshot.StatusText);
+            AppendLine(body, Resources.NotificationLabelDelay, snapshot.DelayText);
+            body.AppendLine(string.Format(Resources.NotificationLossRateWithWindow, snapshot.Statistics.WindowCount, snapshot.LossText));
+            body.AppendLine(string.Format(Resources.NotificationFailureRateWithWindow, snapshot.Statistics.WindowCount, snapshot.FailureText));
+            AppendLine(body, Resources.NotificationLabelTotalLossRate, $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
+            AppendLine(body, Resources.NotificationLabelLastEvent, snapshot.LastEvent);
+            AppendLine(body, Resources.NotificationLabelTimestamp, snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"));
             return body.ToString();
         }
 
@@ -204,22 +206,25 @@ namespace Pings.Notifications
         {
             StringBuilder body = new();
             body.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>");
-            body.AppendLine($"<h2>{AppInfo.ProductName} 告警</h2>");
+            body.AppendLine($"<h2>{AppInfo.ProductName} {Resources.NotificationAlertTitle}</h2>");
             body.AppendLine("<table cellpadding=\"6\" cellspacing=\"0\" border=\"1\" style=\"border-collapse:collapse\">");
-            AppendRow(body, "任务名称", snapshot.Name);
-            AppendRow(body, "目标端点", snapshot.Endpoint);
-            AppendRow(body, "探测协议", snapshot.Protocol.ToConfigString());
-            AppendRow(body, "当前状态", snapshot.StatusText);
-            AppendRow(body, "网络延迟", snapshot.DelayText);
-            AppendRow(body, "丢包率", snapshot.LossText);
-            AppendRow(body, "故障率", snapshot.FailureText);
-            AppendRow(body, "累计丢包率", $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
-            AppendRow(body, "最近事件", snapshot.LastEvent);
-            AppendRow(body, "发生时间", snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"));
+            AppendRow(body, Resources.NotificationLabelTaskName, snapshot.Name);
+            AppendRow(body, Resources.NotificationLabelEndpoint, snapshot.Endpoint);
+            AppendRow(body, Resources.NotificationLabelProtocol, snapshot.Protocol.ToConfigString());
+            AppendRow(body, Resources.NotificationLabelStatus, snapshot.StatusText);
+            AppendRow(body, Resources.NotificationLabelDelay, snapshot.DelayText);
+            AppendRow(body, Resources.NotificationLabelLossRate, snapshot.LossText);
+            AppendRow(body, Resources.NotificationLabelFailureRate, snapshot.FailureText);
+            AppendRow(body, Resources.NotificationLabelTotalLossRate, $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
+            AppendRow(body, Resources.NotificationLabelLastEvent, snapshot.LastEvent);
+            AppendRow(body, Resources.NotificationLabelTimestamp, snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"));
             body.AppendLine("</table>");
             body.AppendLine("</body></html>");
             return body.ToString();
         }
+
+        private static void AppendLine(StringBuilder builder, string label, string value)
+            => builder.AppendLine(string.Format(Resources.NotificationLineFormat, label, value));
 
         private static void AppendRow(StringBuilder builder, string key, string value)
             => builder.AppendLine($"<tr><td><b>{System.Net.WebUtility.HtmlEncode(key)}</b></td><td>{System.Net.WebUtility.HtmlEncode(value)}</td></tr>");

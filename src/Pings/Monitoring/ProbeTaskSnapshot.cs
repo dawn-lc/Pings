@@ -24,8 +24,8 @@ namespace Pings.Monitoring
     {
         public bool IsSuccess => Status == ProbeStatus.Success;
 
-        /// <summary>状态的中文描述，优先使用协议原始信息（HTTP 状态码、IPStatus 具体原因）。</summary>
-        public string StatusText => string.IsNullOrWhiteSpace(Detail) ? Status.ToChineseString() : Detail;
+        /// <summary>状态的可读描述，优先使用协议原始信息（HTTP 状态码、IPStatus 具体原因）。</summary>
+        public string StatusText => string.IsNullOrWhiteSpace(Detail) ? Status.ToDisplayString() : Detail;
 
         /// <summary>延迟文本，非成功时显示 "-"。</summary>
         public string DelayText => DelayMs is { } delay ? $"{delay:0}ms" : "-";
