@@ -434,8 +434,7 @@ dotnet publish src\Pings\Pings.csproj -c Release -r linux-arm64 -p:PublishVarian
 - 冒烟覆盖范围：CI 在**全部 12 个产物**上跑回环 ICMP（不依赖外网、不需要起服务）；
   TCP / UDP / HTTP 的具体行为由单元测试在本机回环端口上验证（见「测试」一节的表格）。
   发布前若改了传输层，建议手工跑一次 README 的「本地多协议冒烟」配置。
-- Linux / macOS 上 ICMP 需要 ICMP datagram 套接字权限（`net.ipv4.ping_group_range` 或 `CAP_NET_RAW`），
-  拿不到时按 `LocalError` 记录，不会中断探测循环。
+- Linux 上 ICMP 优先用原生 socket（需要 `CAP_NET_RAW`，即 root 或 `setcap`）；拿不到时 .NET 会自动改用系统的 `ping` 工具，这条路径禁止自定义负载，所以 `IcmpProbeTransport` 在收到 `PlatformNotSupportedException` 时会用默认负载重试一次，而不是把探测记成 `LocalError`。系统连 `ping` 都没有时才记 `LocalError`，且不会中断探测循环。
 
 ### AOT 相关取舍（与参考项目一致）
 

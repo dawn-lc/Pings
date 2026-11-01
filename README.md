@@ -435,10 +435,7 @@ dotnet run --project src/Pings/Pings.csproj -- --once
 ```
 
 > [!NOTE]
-> Linux / macOS 上的 ICMP 探测依赖套接字权限：.NET 使用 ICMP datagram 套接字，
-> 要求进程属于 `net.ipv4.ping_group_range` 覆盖的组，否则会报 `本地网络错误`（权限不足）。
-> 遇到这种情况，可以授予 `CAP_NET_RAW`（例如 `sudo setcap cap_net_raw+ep` 到宿主进程），
-> 或改用 TCP / HTTP 探测——这两种协议不需要额外权限。
+> Linux 上不使用 root / `CAP_NET_RAW` 时，ICMP 会退化成调用系统的 `ping` 工具（`iputils-ping` 或 BusyBox 版均可），依然可以正常探测，只是不再支持 `payloadSize` 自定义负载。只有连 `ping` 工具都没有时才会报 `本地网络错误`。需要自定义负载时，可以授予 `CAP_NET_RAW`（例如 `sudo setcap cap_net_raw+ep` 到宿主进程），或改用 TCP / HTTP 探测。
 
 ### 本地多协议冒烟
 

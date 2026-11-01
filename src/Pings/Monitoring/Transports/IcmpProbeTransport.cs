@@ -23,10 +23,43 @@ namespace Pings.Monitoring.Transports
         {
             try
             {
+                return await ProbeOnceAsync(_ping, _payload, token).ConfigureAwait(false);
+            }
+            catch (PlatformNotSupportedException ex)
+            {
+                // 没有 CAP_NET_RAW 的 Linux 上，.NET 会改用系统 ping 工具；那条路径禁止自定义负载
+                // （只支持 -p 的 16 字节重复模式，且并非所有发行版都提供）。负载只是填充字节，
+                // 能探测比负载形状重要，所以换一个干净的 Ping 用默认负载再试一次。
+                // 若是「系统没有 ping 工具」，这次重试同样会失败，由下面的 catch 收敛成 LocalError。
+                if (_payload.Length == 0)
+                    return ProbeResult.Failure(ProbeStatus.LocalError, ex.Message);
+
+                using Ping fallback = new();
+
+                try
+                {
+                    return await ProbeOnceAsync(fallback, Array.Empty<byte>(), token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception fallbackError)
+                {
+                    return ProbeResult.Failure(ProbeStatus.LocalError, fallbackError.Message);
+                }
+            }
+        }
+
+        /// <summary>用指定的 <see cref="Ping"/> 实例与负载探测一次；平台回退异常交给调用方决定。</summary>
+        private async Task<ProbeResult> ProbeOnceAsync(Ping ping, byte[] payload, CancellationToken token)
+        {
+            try
+            {
                 // .NET 的 (string, CancellationToken) 组合只有 TimeSpan 超时版本，
                 // int 超时版本没有 CancellationToken 形参。
-                PingReply reply = await _ping
-                    .SendPingAsync(_options.Target, _options.Timeout, _payload, null, token)
+                PingReply reply = await ping
+                    .SendPingAsync(_options.Target, _options.Timeout, payload, null, token)
                     .ConfigureAwait(false);
 
                 return reply.Status == IPStatus.Success
@@ -44,6 +77,11 @@ namespace Pings.Monitoring.Transports
             catch (PingException ex) when (ex.InnerException is SocketException socket)
             {
                 return ProbeResult.Failure(SocketErrorMapping.Map(socket.SocketErrorCode), SocketErrorMapping.Describe(socket.SocketErrorCode));
+            }
+            catch (PlatformNotSupportedException)
+            {
+                // 只有「自定义负载」这一种情况值得换默认负载重试，由 ProbeAsync 判断。
+                throw;
             }
             catch (Exception ex)
             {
