@@ -36,8 +36,8 @@
 
 两个变体怎么选：
 
-- `net`：.NET 自包含单文件，约 12 MB。启动快、行为与 `dotnet` 官方运行时完全一致，兼容性最好。
-- `aot`：Native AOT 原生单文件。Windows 上再叠 UPX，约 **3.9 MB** 且启动最快；其它平台约 9 MB。
+- `net`：.NET 自包含单文件。启动快、行为与 `dotnet` 官方运行时完全一致，兼容性最好。
+- `aot`：Native AOT 原生单文件，体积最小、启动最快。Windows 与 Linux 上再叠 UPX；macOS 不压（UPX 会破坏代码签名）。
 
 共同点：都是**单个文件**、都**无需安装 .NET 运行时**、都兼容未打全累积更新的旧版 Windows 10 / 11（构建时未启用 CET 影子栈）。
 
@@ -53,7 +53,7 @@
 ## 快速开始
 
 首次运行若找不到配置文件，程序会询问是否生成默认的 `config.json`。
-默认配置指向 Cloudflare 的公共测试端点，开箱即可看到四种协议的真实延迟：
+默认配置指向 Cloudflare 的公共测试端点，开箱即可看到三种协议（ICMP / TCP / HTTP）的真实延迟：
 
 | 任务 | 协议 | 端点 | 验证什么 |
 |------|------|------|----------|
@@ -74,8 +74,7 @@
   实测 HEAD / GET、HTTP / HTTPS 都固定返回 204。
 - `one.one.one.one/help` **必须带末尾斜杠**，不带会返回 308 重定向。
 - `1.1.1.1/cdn-cgi/trace` 不实现 HEAD（返回 302），所以显式配置了 `httpMethod: "GET"`。
-- `1.1.1.1:443` 建连只有个位数毫秒，而 ICMP 到同一地址有 270ms 左右——Cloudflare 对 ICMP
-  的处理在慢路径上。判断线路质量时，TCP / HTTP 的数值比 ICMP 更有参考价值。
+- Cloudflare 对 ICMP 的处理在慢路径上，到同一地址的 ICMP 延迟通常明显高于 TCP 建连。判断线路质量时，TCP / HTTP 的数值比 ICMP 更有参考价值。
 - 默认配置**不含 UDP 任务**：Cloudflare 没有公开的 UDP 回声服务。实测
   `time.cloudflare.com:123`（[官方 NTP](https://developers.cloudflare.com/time-services/ntp/)）
   与 `1.1.1.1:53` 对探测包都不会回应——它们是协议服务端，不是回声服务。
@@ -363,10 +362,10 @@ dotnet test tests/Pings.Tests/Pings.Tests.csproj -c Release
 
 每种平台架构都出**两个变体**，平台/架构只用 `-r` 一个参数表达，变体只用 `-p:PublishVariant` 一个参数表达。仓库里没有任何按平台区分的发布配置文件，也不打算有。
 
-| 变体 | 形态 | `win-x64` 实测 |
-|------|------|----------------|
-| `net` | .NET 自包含单文件（自带运行时、内部压缩），免安装，启动快 | **12.07 MB** |
-| `aot` | Native AOT 原生单文件，体积最小、启动最快；Windows 上再叠 UPX | **3.88 MB** |
+| 变体 | 形态 |
+|------|------|
+| `net` | .NET 自包含单文件（自带运行时、内部压缩），免安装，启动快 |
+| `aot` | Native AOT 原生单文件，体积最小、启动最快；Windows 与 Linux 上再叠 UPX |
 
 **发当前环境**（当前操作系统 + 当前架构）是零参数：不写 `-r` 时项目自动取 SDK 的 `NETCoreSdkRuntimeIdentifier`。
 
@@ -395,7 +394,7 @@ dotnet publish src/Pings/Pings.csproj -c Release -r osx-arm64 -p:PublishVariant=
 
 `-f` 不用写。RID 本身就编码了平台与架构，TFM 由项目据此推导（`win-*` → `net10.0-windows`，其余 → `net10.0`）。`-p:PublishVariant` 省略时按 `aot` 处理，所以 `dotnet publish -r win-x64` 直接给出最小体积产物。
 
-其它 SDK 支持的 RID 同样可直接用，不需要改项目文件。除 `win-x64` 外未在本机实测体积：`net` 变体各平台都在 12 MB 上下，`aot` 变体压缩前约 9 MB（压缩后见下）。
+其它 SDK 支持的 RID 同样可直接用，不需要改项目文件；体积随目标平台、架构与 .NET 版本变化，以实际发布结果为准。
 
 | RID | 前置依赖 |
 |-----|----------|
@@ -411,10 +410,10 @@ AOT **不能跨操作系统交叉编译**：Windows 产物必须在 Windows 上�
 
 UPX 对 **Windows 与 Linux 的 `aot` 变体**生效，macOS 不压：
 
-| 目标 | UPX | 理由 |
+| 目标 | UPX | 说明 |
 |------|-----|------|
-| Windows PE | 是 | `win-x64` 实测 9.23 MB → **3.88 MB**（42%，格式 `win64/pe`） |
-| Linux ELF | 是 | Windows 上的 upx 压同一份 ELF 实测 14.75 MB → 7.10 MB（48%，格式 `linux/amd64`）；压缩后的二进制能否运行由 CI 的 Linux 矩阵项冒烟验证（本机没有 Linux 环境） |
+| Windows PE | 是 | 格式 `win64/pe`；压缩后的产物能否启动由 CI 的 `--version` 与冒烟验证 |
+| Linux ELF | 是 | 格式 `linux/amd64`；Windows 上的 `upx.exe` 也能压同一份 ELF（目标格式由文件头识别），压缩后的产物能否运行同样由 CI 的 Linux 矩阵项验证 |
 | macOS Mach-O | 否 | UPX 会重写 Mach-O 映像并破坏代码签名，而 Apple Silicon 上未签名二进制会被内核直接终止（`Killed: 9`），且 UPX 无法重新签名。压完就是「更小但完全跑不起来」；官方 5.3.0 也只发布 Linux 各架构与 win32/win64 资产，没有 macOS 产物 |
 
 UPX 二进制与宿主平台无关，目标格式由文件头自动识别，所以 Windows 上的 `upx.exe` 也能压 ELF。工具解析顺序：`-p:UpxPath` → `tools/upx/upx[.exe]` → `PATH` 里的 `upx`（仅非 Windows 宿主）→ 自动下载（仅 Windows 宿主）。Linux / macOS 上自己装一份即可（`apt install upx-ucl` / `brew install upx`），CI 则在 Linux 矩阵项里固定装 5.3.0 到 `tools/upx/upx`。
@@ -520,7 +519,7 @@ git push origin v1.2.3-Beta
 | `osx-x64` | `Pings-osx-x64-net` | `Pings-osx-x64-aot` |
 | `osx-arm64` | `Pings-osx-arm64-net` | `Pings-osx-arm64-aot` |
 
-选哪个下载：只想跑起来不想管运行时 → `net`；要最小体积和最快启动 → `aot`（Windows 上叠了 UPX）。
+选哪个下载：只想跑起来不想管运行时 → `net`；要最小体积和最快启动 → `aot`（Windows 与 Linux 上叠了 UPX）。
 
 > [!NOTE]
 > Release 只由 tag 驱动，不提供手动触发的 `workflow_dispatch` 入口：手动入口只能跑默认分支的代码，而「发出去的产物必须来自被打 tag 的那个提交」是这里唯一不能妥协的事。失败后重跑同一次运行即可，ref 仍是原 tag。
