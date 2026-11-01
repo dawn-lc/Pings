@@ -43,9 +43,6 @@ namespace Pings.Localization
         /// <summary>可用于提示文案的「auto / en / zh-CN」。</summary>
         public static string SupportedMarkerList => string.Join(" / ", SupportedMarkers);
 
-        /// <summary>进程启动时的原始 UI 文化，<see cref="Auto" /> 用它还原。</summary>
-        private static readonly CultureInfo DefaultCulture = CultureInfo.CurrentUICulture;
-
         /// <summary>
         /// 解析语言标记。<c>auto</c> / 空值成功且 <paramref name="culture" /> 为
         /// <see langword="null" />（表示「不改」）；未知标记返回 <see langword="false" />。
@@ -105,15 +102,23 @@ namespace Pings.Localization
         }
 
         /// <summary>
-        /// 应用语言标记。<c>auto</c> 还原为进程启动时的文化；未知标记不做任何改动
-        /// （报错交给 <c>ConfigValidator</c>，界面继续用当前语言）。
+        /// 应用语言标记。<c>auto</c> / 未知标记一律**不动**当前语言。
         /// </summary>
+        /// <remarks>
+        /// <c>auto</c> 的语义是「跟随系统」，而系统语言就是进程当前的
+        /// <see cref="CultureInfo.CurrentUICulture" />——什么都不做就是最准确的实现。
+        ///
+        /// 刻意**不**缓存一份「启动时的文化」用于还原：那份静态快照会让行为依赖
+        /// 「类型什么时候第一次被碰」——谁先改过 UI 文化，auto 就会把谁改回去。
+        /// 测试里多个用例共享进程，这个隐式耦合会变成难以定位的失败。
+        ///
+        /// 未知标记同样不报错也不改动：报错由 <c>CliOptions</c>（命令行）与
+        /// <c>ConfigValidator</c>（配置文件）负责，它们才有能力输出提示并拒绝启动。
+        /// </remarks>
         public static void Apply(string? marker)
         {
-            if (!TryResolve(marker, out CultureInfo? culture))
-                return;
-
-            CultureInfo.CurrentUICulture = culture ?? DefaultCulture;
+            if (TryResolve(marker, out CultureInfo? culture) && culture is not null)
+                CultureInfo.CurrentUICulture = culture;
         }
     }
 }

@@ -3,8 +3,16 @@ using Pings.Monitoring;
 
 namespace Pings.Tests;
 
-public class ProbeTaskOptionsTests
+/// <remarks>
+/// 结尾几个用例断言的是中文状态文案，必须固定界面语言——
+/// 否则在英文环境（CI）下会拿到 "Timeout" 而不是 "请求超时"。
+/// </remarks>
+public class ProbeTaskOptionsTests : IDisposable
 {
+    private readonly CultureScope _culture = CultureScope.Chinese();
+
+    public void Dispose() => _culture.Dispose();
+
     [Theory]
     [InlineData("8.8.8.8")]
     [InlineData("1.1.1.1")]

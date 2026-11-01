@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Pings.Localization;
+using Pings.Monitoring;
 using Pings.Properties;
 
 namespace Pings.Tests;
@@ -220,21 +221,35 @@ public class LocalizationTests
     }
 
     [Fact]
-    public void 应用自动语言不改变系统文化()
+    public void 测试默认语言固定为英文()
+    {
+        // 与 CI（英文 runner）保持一致：默认必须是英文，中文断言必须显式开 CultureScope。
+        // 这条用例同时守护 TestCultureDefaults 的初始化器——被删掉时它会立刻红。
+        Assert.Equal("en-US", CultureInfo.CurrentUICulture.Name);
+        Assert.Equal("OK", ProbeStatus.Success.ToDisplayString());
+    }
+
+    [Fact]
+    public void 自动语言与未知标记都不改动当前语言()
     {
         CultureInfo original = CultureInfo.CurrentUICulture;
+        
         try
         {
             CultureInfo.CurrentUICulture = new CultureInfo("zh-CN");
-            UiLanguage.Apply(UiLanguage.Auto);
 
+            // auto = 「跟随系统」，即不动当前文化（而不是恢复到某个静态快照）。
+            UiLanguage.Apply(UiLanguage.Auto);
             Assert.Equal("zh-CN", CultureInfo.CurrentUICulture.Name);
 
             UiLanguage.Apply("en");
             Assert.Equal("en", CultureInfo.CurrentUICulture.Name);
 
-            // 未知标记不应改动当前语言（报错交给配置校验）
+            // 未知标记不报错也不改语言（报错交给 CliOptions / ConfigValidator）。
             UiLanguage.Apply("fr");
+            Assert.Equal("en", CultureInfo.CurrentUICulture.Name);
+
+            UiLanguage.Apply(null);
             Assert.Equal("en", CultureInfo.CurrentUICulture.Name);
         }
         finally
