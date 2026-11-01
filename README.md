@@ -65,20 +65,6 @@
 | Cloudflare 诊断页 | http | `https://one.one.one.one/help/` | 官方「Verify connection」页，期望 200 |
 | Cloudflare Trace | http | `https://1.1.1.1/cdn-cgi/trace` | `GET` 请求 + 出口线路信息 |
 
-几点说明：
-
-- 这些地址分别对应官方文档的 [IP addresses](https://developers.cloudflare.com/1.1.1.1/ip-addresses/)、
-  [DNS over TLS](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-tls/)（853）、
-  [Verify connection](https://developers.cloudflare.com/1.1.1.1/check/)；
-  `cp.cloudflare.com/generate_204` 是 Android / ChromeOS 通用的 captive portal 检测端点，
-  实测 HEAD / GET、HTTP / HTTPS 都固定返回 204。
-- `one.one.one.one/help` **必须带末尾斜杠**，不带会返回 308 重定向。
-- `1.1.1.1/cdn-cgi/trace` 不实现 HEAD（返回 302），所以显式配置了 `httpMethod: "GET"`。
-- Cloudflare 对 ICMP 的处理在慢路径上，到同一地址的 ICMP 延迟通常明显高于 TCP 建连。判断线路质量时，TCP / HTTP 的数值比 ICMP 更有参考价值。
-- 默认配置**不含 UDP 任务**：Cloudflare 没有公开的 UDP 回声服务。实测
-  `time.cloudflare.com:123`（[官方 NTP](https://developers.cloudflare.com/time-services/ntp/)）
-  与 `1.1.1.1:53` 对探测包都不会回应——它们是协议服务端，不是回声服务。
-
 下面是一份自行扩展的示例（把默认任务换成你自己的目标）：
 
 ```jsonc
