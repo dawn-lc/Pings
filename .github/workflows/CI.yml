@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # 与 Release.yml 必须一致，否则「CI 验过的」与「发出去的」不是同一种构建
+  UPX_VERSION: '5.3.0'
+
+jobs:
+  build-test:
+    name: 构建 / 测试 / AOT 冒烟
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Verify source encoding
+        shell: pwsh
+        run: |
+          # 源码统一 UTF-8 无 BOM：中文注释/字符串在 BOM 缺失或混用编码时会变成乱码。
+          $files = Get-ChildItem -Recurse -File -Include *.cs, *.md, *.json, *.yml, *.csproj |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj|\.git)\\' }
+
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "文件含 UTF-8 BOM: $($file.FullName)"
+            }
+          }
+
+          Write-Host "检查通过：$($files.Count) 个文件均为 UTF-8 无 BOM"
+
+      - name: Restore
+        run: dotnet restore Pings.sln
+
+      - name: Build
+        run: dotnet build Pings.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/Pings.Tests/Pings.Tests.csproj -c Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+      - name: Publish Native AOT
+        run: >
+          dotnet publish src/Pings/Pings.csproj -c Release
+          -f net10.0-windows
+          -p:PublishProfile=src/Pings/Properties/PublishProfiles/win-x64-aot.pubxml
+          -p:UpxVersion=${{ env.UPX_VERSION }}
+          -o dist/aot
+
+      - name: Verify UPX applied
+        shell: pwsh
+        run: |
+          # 「发布目录只有一个文件」由 csproj 的 VerifyPublishOutput 在构建期断言，
+          # 这里只补它不做的事：确认 UPX 真的压缩过。
+          # 用体积阈值是因为 upx -l 只对压缩过的文件返回成功，而未压缩产物仍能正常运行 ——
+          # 光看「能跑通」是测不出来的。
+          $size = (Get-Item "dist/aot/Pings.exe").Length
+          Write-Host ("产物 {0:N2} MB" -f ($size / 1MB))
+          if ($size -gt 8MB) { throw ("{0:N2} MB 偏大，UPX 可能未生效（看构建日志里有没有 “UPX 压缩”）" -f ($size / 1MB)) }
+
+      - name: Smoke test (--version / --help)
+        shell: pwsh
+        run: |
+          $exe = "dist/aot/Pings.exe"
+          if (-not (Test-Path $exe)) { throw "未找到发布产物 $exe" }
+
+          # CI 不注入 tag，走 csproj 的默认值：0.0.0-Dev。
+          # 同时守护「版本号来自程序集元数据」这条链路（读不到就会退化成这个占位值）。
+          $version = & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version 退出码 $LASTEXITCODE" }
+          if ($version -ne 'Pings 0.0.0-Dev') { throw "CI 构建的版本号应为 'Pings 0.0.0-Dev'，实际 '$version'" }
+
+          & $exe --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "--help 退出码 $LASTEXITCODE" }
+
+          $size = (Get-Item $exe).Length / 1MB
+          Write-Host ("产物 {0:N2} MB，版本 {1}" -f $size, $version)
+
+      - name: Smoke test (--once, 回环地址)
+        shell: pwsh
+        run: |
+          $config = @'
+          {
+            "tasks": [
+              { "name": "loopback", "ip": "127.0.0.1", "timeout": 2000 }
+            ],
+            "logging": { "logFilePath": "smoke.log", "enableConsoleLog": false }
+          }
+          '@
+          Set-Content -Path "smoke.json" -Value $config -Encoding utf8NoBOM
+
+          & "dist/aot/Pings.exe" smoke.json --once --no-color
+          if ($LASTEXITCODE -ne 0) { throw "--once 退出码 $LASTEXITCODE（回环地址应可达）" }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pings-aot
+          path: dist/aot/Pings.exe
+          if-no-files-found: error

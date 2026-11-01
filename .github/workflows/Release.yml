@@ -1,72 +1,141 @@
 name: Release
+
+# 版本号唯一真相源是 git tag。tag 形如：
+#   v1.0.22 / 1.0.22             → 版本 1.0.22，类型 Release
+#   v1.1.0-Beta / 1.1.0-Beta      → 版本 1.1.0，类型 Beta
+# 发布：git tag -a v1.0.22 -m "v1.0.22" && git push origin v1.0.22
 on:
   push:
-    branches: 
-      - master
-    paths:
-      - '.github/workflows/Release.yml'
-      - '*.cs'
-      - '*.csproj'
-      - '*.sln'
+    tags:
+      - 'v[0-9]*'
+      - '[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的已有 tag（例如 v1.0.22）'
+        required: true
+
 env:
-  release_tag: latest
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  UPX_VERSION: '5.3.0'
+
+permissions:
+  contents: write
+
 jobs:
-  Release:
-    if: github.actor != 'github-actions'
+  release:
+    name: 发布 Native AOT
     runs-on: windows-latest
-    env:
-      Project_Name: Pings
-      Solution_Name: Pings.sln
-      Release_Tag: latest
+
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
 
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Resolve version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw '无法确定发布 tag。' }
 
-    - name: Install .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 10
+          # 剥掉 v 前缀，再按第一个 '-' 切成「版本」与「发布类型」
+          $core = ($tag -replace '^[vV]', '')
+          $parts = $core -split '-', 2
+          $version = $parts[0]
+          $versionType = if ($parts.Count -gt 1) { $parts[1] } else { 'Release' }
 
-    - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v3.0.0
-      with:
-        versionSpec: '6.0.x'
+          # 必须校验为三段纯数字：段数不对时版本比较/展示都会失去意义，宁可在这里硬失败
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "tag '$tag' 的版本号 '$version' 不是三段 x.y.z"
+          }
 
-    - name: Determine Version
-      uses: gittools/actions/gitversion/execute@v3.0.0
-      with:
-        useConfigFile: true
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "versionType=$versionType" >> $env:GITHUB_OUTPUT
+          Write-Host "版本号: $version，类型: $versionType"
 
-    - name: Publish Windows Binaries
-      run: dotnet publish ./${{ env.Project_Name }}.csproj -f net10.0-windows -r win-x64 -c Release --output ./
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
 
-    - name: Compress binaries
-      uses: crazy-max/ghaction-upx@v3
-      with:
-        version: latest
-        args: --ultra-brute -k -o upx-${{ env.Project_Name }}.exe
-        files: |
-          ./${{ env.Project_Name }}.exe
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-
 
-    - name: Create Git tag And Push
-      run: |
-        git config --global user.name github-actions
-        git config --global user.email github-actions@github.com
-        git tag -a v${{ env.GitVersion_SemVer }} -m "Github Actions release ${{ env.GitVersion_SemVer }}"
-        git push origin v${{ env.GitVersion_SemVer }}
+      - name: Restore
+        run: dotnet restore Pings.sln
 
-    - run: gh release delete v${{ env.GitVersion_SemVer }} --cleanup-tag --yes
-      continue-on-error: true
+      - name: Test
+        run: dotnet test tests/Pings.Tests/Pings.Tests.csproj -c Release
 
-    - name: 发布版本存档
-      run: gh release create v${{ env.GitVersion_SemVer }} ./${{ env.Project_Name }}.exe ./upx-${{ env.Project_Name }}.exe --target master --latest --title "${{ env.GitVersion_SemVer }}" --notes "v${{ env.GitVersion_SemVer }} ${{ github.sha }}"
+      - name: Publish Native AOT
+        run: >
+          dotnet publish src/Pings/Pings.csproj -c Release
+          -f net10.0-windows
+          -p:PublishProfile=src/Pings/Properties/PublishProfiles/win-x64-aot.pubxml
+          -p:AppVersion=${{ steps.version.outputs.version }}
+          -p:AppVersionType=${{ steps.version.outputs.versionType }}
+          -p:UpxVersion=${{ env.UPX_VERSION }}
+          -o dist/aot
 
-    - run: gh release delete ${{ env.release_tag }} --cleanup-tag --yes
-      continue-on-error: true
+      - name: Verify published binary
+        shell: pwsh
+        run: |
+          $exe = "dist/aot/Pings.exe"
+          if (-not (Test-Path $exe)) { throw "发布产物不存在：$exe" }
 
-    - name: 发布正式版本
-      run: gh release create ${{ env.release_tag }} ./${{ env.Project_Name }}.exe ./upx-${{ env.Project_Name }}.exe --target master --latest --title "${{ env.GitVersion_SemVer }}" --generate-notes
+          # 「发布目录只有一个文件」已由 csproj 的 VerifyPublishOutput 在构建期断言，
+          # 这里验证只有产物自己能证明的事：真实 exe 读出的版本元数据。
+
+          # 版本号与类型必须等于 tag 注入值（真实验证 AOT 产物里的程序集元数据读取）
+          $version = "${{ steps.version.outputs.version }}"
+          $versionType = "${{ steps.version.outputs.versionType }}"
+          $expected = if ($versionType -eq 'Release') { "Pings $version" } else { "Pings $version-$versionType" }
+
+          $actual = & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version 退出码 $LASTEXITCODE" }
+          if ($actual -ne $expected) { throw "版本号不符: 期望 '$expected'，实际 '$actual'" }
+
+          # UPX 是否真的压缩过：直接问 upx，而不是比体积阈值（阈值会随 .NET 版本漂移）
+          $size = (Get-Item $exe).Length
+          Write-Host ("产物：{0:N2} MB，版本 {1}" -f ($size / 1MB), $actual)
+          if ($size -gt 8MB) {
+            throw ("{0:N2} MB 偏大，UPX 可能未生效（看构建日志里的 “UPX 压缩” 一行）" -f ($size / 1MB))
+          }
+
+      - name: Smoke test (loopback)
+        shell: pwsh
+        run: |
+          $config = @'
+          {
+            "tasks": [ { "name": "loopback", "ip": "127.0.0.1", "timeout": 2000 } ],
+            "logging": { "logFilePath": "smoke.log", "enableConsoleLog": false }
+          }
+          '@
+          Set-Content -Path "smoke.json" -Value $config -Encoding utf8NoBOM
+
+          & "dist/aot/Pings.exe" smoke.json --once --no-color
+          if ($LASTEXITCODE -ne 0) { throw "--once 退出码 $LASTEXITCODE（回环地址应可达）" }
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+
+          # 只发一个 exe：UPX 由构建期原地压缩，不再额外产出 upx-Pings.exe。
+          # 两个 exe 会让使用者/自动化在两种形态间不确定地切换。
+          gh release create $tag `
+            "dist/aot/Pings.exe" `
+            --title "${{ steps.version.outputs.version }}" `
+            --generate-notes `
+            --verify-tag

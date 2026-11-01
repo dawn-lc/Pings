@@ -185,6 +185,10 @@ publish/
 # Note: Comment the next line if you want to checkin your web deploy settings,
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
+# 例外：发布配置是本项目的构建资产（Native AOT 的唯一发布形态），必须入库。
+# 没有它，Release 工作流的 -p:PublishProfile 会直接找不到文件。
+# 用 ** 而不是写死 Properties/...：项目位于 src/Pings/ 下，锚定根目录的模式匹配不到。
+!**/Properties/PublishProfiles/*.pubxml
 *.publishproj
 
 # Microsoft Azure Web App publish settings. Comment the next line if you want to
@@ -361,3 +365,11 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# 发布产物与测试结果
+dist/
+TestResults/
+*.trx
+
+# 构建期自动获取的外部工具（upx.exe 等），不入库
+tools/

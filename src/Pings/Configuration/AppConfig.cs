@@ -1,145 +1,121 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Pings
+namespace Pings.Configuration
 {
     /// <summary>
-    /// JSON配置文件模型
+    /// JSON 配置文件根模型。
     /// </summary>
-    public class AppConfig
+    public sealed class AppConfig
     {
-        /// <summary>
-        /// 监控任务配置列表
-        /// </summary>
+        /// <summary>监控任务列表。</summary>
         [JsonPropertyName("tasks")]
-        public List<ICMPTaskConfigJson> Tasks { get; set; } = [];
+        public List<IcmpTaskConfigJson> Tasks { get; set; } = [];
 
-        /// <summary>
-        /// 全局配置
-        /// </summary>
+        /// <summary>全局行为配置。</summary>
         [JsonPropertyName("global")]
         public GlobalConfig Global { get; set; } = new();
 
-        /// <summary>
-        /// 日志配置
-        /// </summary>
+        /// <summary>日志配置。</summary>
         [JsonPropertyName("logging")]
         public LoggingConfig Logging { get; set; } = new();
 
-        /// <summary>
-        /// 通知配置（Webhook / Email）
-        /// </summary>
+        /// <summary>通知配置（Webhook / Email）。</summary>
         [JsonPropertyName("notifications")]
         public NotificationsConfig Notifications { get; set; } = new();
     }
 
     /// <summary>
-    /// ICMP任务配置（JSON版本）
+    /// 单个监控任务的 JSON 配置。
     /// </summary>
-    public class ICMPTaskConfigJson
+    public sealed class IcmpTaskConfigJson
     {
-        /// <summary>
-        /// 任务名称
-        /// </summary>
+        /// <summary>任务名称（界面显示名）。</summary>
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 
-        /// <summary>
-        /// 目标IP地址或域名
-        /// </summary>
+        /// <summary>目标 IP 地址或域名。</summary>
         [JsonPropertyName("ip")]
         public string IP { get; set; } = string.Empty;
 
-        /// <summary>
-        /// Ping超时时间（毫秒），默认1000
-        /// </summary>
+        /// <summary>单次 Ping 超时时间（毫秒），默认 1000。</summary>
         [JsonPropertyName("timeout")]
         public int Timeout { get; set; } = 1000;
 
-        /// <summary>
-        /// 最大最近数据包记录数，默认255
-        /// </summary>
+        /// <summary>探测间隔（毫秒），0 表示与 <see cref="Timeout"/> 相同。</summary>
+        [JsonPropertyName("interval")]
+        public int Interval { get; set; } = 0;
+
+        /// <summary>参与丢包率与延迟统计的样本数（滑动窗口），默认 255。</summary>
         [JsonPropertyName("maxRecentPackets")]
         public int MaxRecentPackets { get; set; } = 255;
 
-        /// <summary>
-        /// 显著延迟变化阈值（毫秒），默认20
-        /// </summary>
+        /// <summary>显著延迟波动阈值（毫秒），0 表示关闭，默认 20。</summary>
         [JsonPropertyName("significantDelayThreshold")]
         public int SignificantDelayThreshold { get; set; } = 20;
 
-        /// <summary>
-        /// 丢包持续时间阈值（秒），默认30
-        /// </summary>
+        /// <summary>连续丢包持续时间阈值（秒），0 表示不按时长判定，默认 30。</summary>
         [JsonPropertyName("packetLossDuration")]
         public double PacketLossDuration { get; set; } = 30.0;
 
-        /// <summary>
-        /// 丢包计数阈值，默认5
-        /// </summary>
+        /// <summary>连续丢包次数阈值，0 表示不按次数判定，默认 5。</summary>
         [JsonPropertyName("packetLossCount")]
         public int PacketLossCount { get; set; } = 5;
     }
 
     /// <summary>
-    /// 全局配置
+    /// 全局行为配置。
     /// </summary>
-    public class GlobalConfig
+    public sealed class GlobalConfig
     {
-        /// <summary>
-        /// 自动确认警告的间隔（秒），0表示禁用，默认0
-        /// </summary>
+        /// <summary>自动确认警告的间隔（秒），0 表示禁用，默认 0。</summary>
         [JsonPropertyName("autoConfirmWarningInterval")]
         public int AutoConfirmWarningInterval { get; set; } = 0;
 
-        /// <summary>
-        /// 界面刷新间隔（毫秒），默认1000
-        /// </summary>
+        /// <summary>界面刷新间隔（毫秒），默认 1000。</summary>
         [JsonPropertyName("uiRefreshInterval")]
         public int UiRefreshInterval { get; set; } = 1000;
 
-        /// <summary>
-        /// 启用详细日志，默认false
-        /// </summary>
+        /// <summary>输出详细日志，默认 false。</summary>
         [JsonPropertyName("enableVerboseLogging")]
         public bool EnableVerboseLogging { get; set; } = false;
+
+        /// <summary>
+        /// 同一目标的通知冷却时间（秒），用于抑制告警风暴，0 表示不限制，默认 60。
+        /// </summary>
+        [JsonPropertyName("notificationCooldownSeconds")]
+        public int NotificationCooldownSeconds { get; set; } = 60;
+
+        /// <summary>目标恢复连通时是否也发送通知，默认 true。</summary>
+        [JsonPropertyName("notifyOnRecovery")]
+        public bool NotifyOnRecovery { get; set; } = true;
     }
 
     /// <summary>
-    /// 日志配置
+    /// 日志配置。
     /// </summary>
-    public class LoggingConfig
+    public sealed class LoggingConfig
     {
-        /// <summary>
-        /// 日志文件路径，默认"Pings.log"
-        /// </summary>
+        /// <summary>日志文件路径，默认 "Pings.log"。</summary>
         [JsonPropertyName("logFilePath")]
         public string LogFilePath { get; set; } = "Pings.log";
 
-        /// <summary>
-        /// 最大日志文件大小（MB），默认10
-        /// </summary>
+        /// <summary>单个日志文件的最大体积（MB），默认 10。</summary>
         [JsonPropertyName("maxLogFileSize")]
         public int MaxLogFileSize { get; set; } = 10;
 
-        /// <summary>
-        /// 保留的日志文件数量，默认5
-        /// </summary>
+        /// <summary>保留的历史日志文件数量，默认 5。</summary>
         [JsonPropertyName("maxLogFiles")]
         public int MaxLogFiles { get; set; } = 5;
 
-        /// <summary>
-        /// 启用控制台日志，默认true
-        /// </summary>
+        /// <summary>同时输出到控制台，默认 true（实时表格运行时自动抑制）。</summary>
         [JsonPropertyName("enableConsoleLog")]
         public bool EnableConsoleLog { get; set; } = true;
     }
 
     /// <summary>
-    /// 通知配置（Webhook 与 Email）
+    /// 通知配置。
     /// </summary>
-    public class NotificationsConfig
+    public sealed class NotificationsConfig
     {
         [JsonPropertyName("webhook")]
         public WebhookConfig Webhook { get; set; } = new();
@@ -148,7 +124,10 @@ namespace Pings
         public EmailConfig Email { get; set; } = new();
     }
 
-    public class WebhookConfig
+    /// <summary>
+    /// Webhook 通知配置。
+    /// </summary>
+    public sealed class WebhookConfig
     {
         [JsonPropertyName("enabled")]
         public bool Enabled { get; set; } = false;
@@ -159,20 +138,26 @@ namespace Pings
         [JsonPropertyName("method")]
         public string Method { get; set; } = "POST";
 
+        /// <summary>附加请求头，值支持与 <see cref="Content"/> 相同的模板占位符。</summary>
         [JsonPropertyName("headers")]
         public Dictionary<string, string> Headers { get; set; } = [];
 
+        /// <summary>认证方案（如 Bearer / Basic），留空表示不认证。</summary>
         [JsonPropertyName("authType")]
         public string AuthType { get; set; } = string.Empty;
 
         [JsonPropertyName("authToken")]
         public string AuthToken { get; set; } = string.Empty;
 
+        /// <summary>请求体模板，支持 %#Key#% 形式的占位符。</summary>
         [JsonPropertyName("content")]
         public string Content { get; set; } = string.Empty;
     }
 
-    public class EmailConfig
+    /// <summary>
+    /// 邮件通知配置。
+    /// </summary>
+    public sealed class EmailConfig
     {
         [JsonPropertyName("enabled")]
         public bool Enabled { get; set; } = false;
@@ -198,5 +183,4 @@ namespace Pings
         [JsonPropertyName("to")]
         public List<string> To { get; set; } = [];
     }
-
 }

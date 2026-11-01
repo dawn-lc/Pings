@@ -1,4 +1,33 @@
-﻿[*.cs]
+﻿root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,md,xml,csproj,pubxml,props,targets}]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[*.cs]
 
 # IDE0251: 将成员设为“readonly”
 dotnet_diagnostic.IDE0251.severity = silent
+
+# 命名：私有字段使用 _camelCase，其余 PascalCase
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+dotnet_naming_style.underscore_camel.required_prefix = _
+
+# 常用分析器：把容易演变成 bug 的写法提高优先级
+dotnet_diagnostic.CA2007.severity = none      # ConfigureAwait 已在关键路径显式使用
+dotnet_diagnostic.IDE0005.severity = warning  # 多余的 using
+

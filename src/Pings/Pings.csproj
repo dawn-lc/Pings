@@ -1,0 +1,218 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+
+        <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
+
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <!-- 仓库根：本文件在 src\Pings\ 下，build\ 与 tools\ 留在仓库根。
+             不需要再排除 Pings.Tests/build：它们已不在本项目的目录树内。 -->
+        <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..'))</RepoRoot>
+
+        <PublishAot>true</PublishAot>
+        <OptimizationPreference>Size</OptimizationPreference>
+        <PublishTrimmed>true</PublishTrimmed>
+        <IsTrimmable>true</IsTrimmable>
+
+        <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+        <UseSystemResourceKeys>true</UseSystemResourceKeys>
+
+        <!--
+          刻意保留 StackTraceSupport（默认 true）：verbose 模式承诺输出完整堆栈，
+          裁掉堆栈元数据后 exception.ToString() 只剩类型名与消息，排障价值大打折扣。
+          这点体积换可诊断性是划算的。
+        -->
+        <StackTraceSupport>true</StackTraceSupport>
+
+        <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+        <InvariantGlobalization>false</InvariantGlobalization>
+        <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+        <EventSourceSupport>false</EventSourceSupport>
+        <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+        <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+        <DebuggerSupport>false</DebuggerSupport>
+
+        <StartupObject>Pings.Program</StartupObject>
+
+        <Authors>dawn-lc</Authors>
+        <Company>https://github.com/dawn-lc</Company>
+        <PackageProjectUrl>https://github.com/dawn-lc/Pings</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/dawn-lc/Pings</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+
+        <!--
+          版本号唯一真相源是 git tag：发布时由工作流注入
+          -p:AppVersion=x.y.z -p:AppVersionType=Release。
+          本地构建保持 0.0.0 / Dev，避免「改了源码忘打 tag」「打完 tag 忘改源码」两类不一致。
+        -->
+        <AppVersion Condition="'$(AppVersion)' == ''">0.0.0</AppVersion>
+        <AppVersionType Condition="'$(AppVersionType)' == ''">Dev</AppVersionType>
+
+        <!-- 同步给 SDK，让 exe 的文件属性（资源管理器里看到的）与命令行版本输出一致 -->
+        <Version>$(AppVersion)</Version>
+
+        <NeutralLanguage>zh-CN</NeutralLanguage>
+
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+        <!--
+          兼容未打全累积更新的旧版 Windows 10 / 11。
+          .NET 9 起 SDK 默认用 /CETCOMPAT 链接宿主；若目标机器启用了影子栈却缺少
+          SPECIAL_USER_APC 支持，.NET 10 会在托管 Main 之前 fail-fast
+          （"Your Windows doesn't fully support CET"，0x80131506），try/catch 捕不到。
+          去掉该标记后进程不启用影子栈，检查自然跳过；代价是失去 CET 加固。
+          官方说明：https://learn.microsoft.com/dotnet/core/compatibility/interop/9.0/cet-support
+        -->
+        <CetCompat>false</CetCompat>
+
+        <!--
+          DebugType/DebugSymbols 管不到 ILCompiler 的原生符号：Microsoft.NETCore.Native.Publish.targets
+          里的 _CopyAotSymbols 由 CopyOutputSymbolsToPublishDirectory 控制，默认 true ——
+          于是发布目录会多一个几十 MB 的 .pdb，破坏「单 exe 下载」形态。显式关掉。
+        -->
+        <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    </PropertyGroup>
+
+    <!-- Release 精简 -->
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <DebugSymbols>false</DebugSymbols>
+        <DebugType>none</DebugType>
+    </PropertyGroup>
+    <!-- 只在 Windows 目标下编译 Windows 专用互操作代码。
+         旧写法对 net10.0 也定义了 WINDOWS，导致 Linux 构建出带 kernel32 调用的程序集。 -->
+    <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
+        <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MailKit" Version="4.18.2"></PackageReference>
+        <PackageReference Include="Spectre.Console" Version="0.57.2"></PackageReference>
+    </ItemGroup>
+
+    <!--
+      版本信息写入程序集元数据，供 AppInfo 读取。
+
+      不读 AssemblyInformationalVersion：那是 SDK 生成的，会追加源码哈希
+      （实测 1.2.3+c6e9e86…），解析它等于把「版本正确」寄托在 SDK 的内部行为上；
+      即使 csproj 里写了 <InformationalVersion>$(Version)</InformationalVersion> 也拦不住。
+      自定义元数据是我们自己持有契约，SDK 改行为也不受影响。
+
+      第二个字段是发布类型（Release / Beta / Dev），与版本号分开：单个 tag 既能表达
+      「发什么」也能表达「发到哪个渠道」，不必靠猜后缀。
+    -->
+    <ItemGroup>
+        <AssemblyMetadata Include="AppVersion" Value="$(AppVersion)" />
+        <AssemblyMetadata Include="AppVersionType" Value="$(AppVersionType)" />
+    </ItemGroup>
+
+    <!--
+      ============================================================================
+      UPX 压缩 AOT 原生产物
+      ============================================================================
+
+      Native AOT 产物是普通原生 PE，UPX 能压到原来的约 40%（体积与启动都更优）。
+      纯 MSBuild 实现，发布流程里不引入外部脚本。
+
+      解析顺序：-p:UpxPath → tools\upx\upx.exe → 自动下载最新 win64 版。
+      找不到只警告不失败（只是体积优化）。
+
+      可选参数：
+        -p:UpxVersion=5.3.0       固定版本（产物可重现，CI 推荐）
+        -p:EnableUpx=false        完全关闭压缩
+        -p:UpxForceUpdate=true    忽略缓存重新探测最新版
+        -p:UpxAutoDownload=false  禁止自动下载，找不到就跳过
+        -p:UpxPath=C:\x\upx.exe   使用自备的 upx
+
+      为什么挂在 AfterTargets="CopyNativeBinary" 而不是 "Publish"：
+      ILCompiler 的原生二进制由 CopyNativeBinary 复制进 $(PublishDir)，而该 target 本身
+      也是 AfterTargets="Publish"。两个同样挂在 Publish 之后的 target 执行顺序不确定 ——
+      实测 UPX 先跑时压缩的是中间产物，随后被 CopyNativeBinary 覆盖回未压缩文件
+      （日志显示 "Packed 1 file" 但输出目录仍是完整体积，就是这么来的）。
+      挂在 CopyNativeBinary 之后，顺序才是确定的。
+    -->
+    <PropertyGroup>
+        <EnableUpx Condition="'$(EnableUpx)' == ''">true</EnableUpx>
+        <UpxAutoDownload Condition="'$(UpxAutoDownload)' == ''">true</UpxAutoDownload>
+        <UpxForceUpdate Condition="'$(UpxForceUpdate)' == ''">false</UpxForceUpdate>
+        <_UpxToolDir>$(RepoRoot)\tools\upx\</_UpxToolDir>
+
+        <!-- 自动下载只提供 win64 发行包；其它平台请用 -p:UpxPath 或 PATH 里的 upx。 -->
+        <_UpxTargetIsWindows Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win'))">true</_UpxTargetIsWindows>
+    </PropertyGroup>
+
+    <UsingTask TaskName="EnsureUpxToolTask" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+        <ParameterGroup>
+            <ExplicitPath ParameterType="System.String" />
+            <ToolDirectory ParameterType="System.String" Required="true" />
+            <RequestedVersion ParameterType="System.String" />
+            <AutoDownload ParameterType="System.Boolean" Required="true" />
+            <ForceUpdate ParameterType="System.Boolean" Required="true" />
+            <ResultPath ParameterType="System.String" Output="true" />
+            <ResolvedVersion ParameterType="System.String" Output="true" />
+            <WasDownloaded ParameterType="System.Boolean" Output="true" />
+        </ParameterGroup>
+        <Task>
+            <Code Type="Class" Language="cs" Source="$(RepoRoot)\build\BuildTasks.cs" />
+        </Task>
+    </UsingTask>
+
+    <Target Name="EnsureUpxTool" Condition="'$(PublishAot)' == 'true' and '$(EnableUpx)' == 'true' and '$(_UpxTargetIsWindows)' == 'true'">
+        <EnsureUpxToolTask ExplicitPath="$(UpxPath)" ToolDirectory="$(_UpxToolDir)" RequestedVersion="$(UpxVersion)" AutoDownload="$(UpxAutoDownload)" ForceUpdate="$(UpxForceUpdate)">
+            <Output TaskParameter="ResultPath" PropertyName="_UpxToolPath" />
+            <Output TaskParameter="ResolvedVersion" PropertyName="_UpxResolvedVersion" />
+            <Output TaskParameter="WasDownloaded" PropertyName="_UpxWasDownloaded" />
+        </EnsureUpxToolTask>
+    </Target>
+
+    <!--
+      **条件不能引用 _UpxToolPath**：MSBuild 在运行 DependsOnTargets 之前就求值 target 的
+      Condition，此时 EnsureUpxTool 还没跑、路径变量必然为空 —— 一旦把路径写进 Condition，
+      整个 target 会被直接跳过（含依赖），压缩静默失效（实测：日志里看得见
+      "使用指定的 UPX"，产物却仍是未压缩体积）。
+      因此这里只在 Condition 里判断「该不该尝试」，路径是否拿到放在 task 级 Condition 上。
+    -->
+    <Target Name="UpxCompressNativeBinary" AfterTargets="CopyNativeBinary" DependsOnTargets="EnsureUpxTool" Condition="'$(PublishAot)' == 'true' and '$(EnableUpx)' == 'true' and '$(_UpxTargetIsWindows)' == 'true'">
+        <PropertyGroup>
+            <_UpxBinary>$(PublishDir)$(TargetName)$(NativeBinaryExt)</_UpxBinary>
+        </PropertyGroup>
+
+        <Message Importance="high" Condition="'$(EnableUpx)' == 'true' and '$(_UpxToolPath)' == ''"
+                 Text="UPX 不可用，AOT 产物保持未压缩。可手工放入 tools\upx\upx.exe 或检查网络。" />
+
+        <Error Condition="'$(_UpxToolPath)' != '' and !Exists('$(_UpxBinary)')"
+               Text="UPX 目标不存在：$(_UpxBinary)（CopyNativeBinary 未产出原生二进制？）" />
+
+        <!-- UPX 自己会打印压缩前后的体积与比例，不必在这里重复计算 -->
+        <Message Importance="high" Condition="'$(_UpxToolPath)' != ''" Text="UPX 压缩（$(_UpxResolvedVersion)）：$(_UpxBinary)" />
+        <Exec Condition="'$(_UpxToolPath)' != ''" Command="&quot;$(_UpxToolPath)&quot; --best &quot;$(_UpxBinary)&quot;" />
+    </Target>
+
+    <!--
+      发布形态自检：AOT 产物必须是「单个原生二进制」。
+      这类问题在本地肉眼很难发现 —— 发布目录多一个几十 MB 的 .pdb 不影响运行，
+      只有真去下载的人才会注意到。放在构建里，本地发布与 CI 用同一份判据。
+
+      刻意不做体积阈值断言：阈值会随 .NET 版本漂移，换成「目录里只能有一个文件」
+      这种结构性判据更稳定（UPX 是否生效由 CI 单独确认）。
+    -->
+    <Target Name="VerifyPublishOutput" AfterTargets="UpxCompressNativeBinary" Condition="'$(PublishAot)' == 'true'">
+        <ItemGroup>
+            <_PublishedFile Include="$(PublishDir)*" />
+        </ItemGroup>
+
+        <Error Condition="'@(_PublishedFile)' == ''"
+               Text="发布目录为空：$(PublishDir)" />
+
+        <Error Condition="!Exists('$(PublishDir)$(TargetName)$(NativeBinaryExt)')"
+               Text="发布目录里没有原生二进制：$(PublishDir)$(TargetName)$(NativeBinaryExt)" />
+
+        <Error Condition="'@(_PublishedFile->Count())' &gt; 1"
+               Text="发布目录应只有一个文件，实际有 @(_PublishedFile->Count()) 个：@(_PublishedFile->'%(Filename)%(Extension)', ', ')。若多出 .pdb，说明 CopyOutputSymbolsToPublishDirectory 没生效。" />
+
+        <Message Importance="high" Text="发布形态检查通过：$(PublishDir)$(TargetName)$(NativeBinaryExt)（单文件）" />
+    </Target>
+
+</Project>
