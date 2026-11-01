@@ -245,5 +245,17 @@ namespace Pings.Configuration
 
         [JsonPropertyName("to")]
         public List<string> To { get; set; } = [];
+
+        /// <summary>主题模板，支持与 Webhook 相同的 <c>%#Key#%</c> 占位符；留空表示使用内置模板。</summary>
+        [JsonPropertyName("subject")]
+        public string Subject { get; set; } = string.Empty;
+
+        /// <summary>纯文本正文模板，支持 <c>%#Key#%</c>；留空表示使用内置模板。</summary>
+        [JsonPropertyName("content")]
+        public string Content { get; set; } = string.Empty;
+
+        /// <summary>HTML 正文模板，支持 <c>%#Key#%</c>；留空时由 <see cref="Content" /> 生成，未配置正文则使用内置模板。</summary>
+        [JsonPropertyName("htmlContent")]
+        public string HtmlContent { get; set; } = string.Empty;
     }
 }

@@ -15,7 +15,7 @@
 - **完整的统计数据**：累计发送/接收/丢包/故障、滑窗丢包率与故障率、最小/平均/最大/p95 RTT、标准差、抖动（EWMA）
 - **三类告警**：故障类别变化、两级中断升级（次数先疑似、时长再确认）、抖动链路（窗口内多次短时中断）；
   延迟波动基于 SRTT / RTTVAR 基线，带预热与连续确认
-- **通知**：Webhook 与 SMTP 邮件，模板占位符统一单遍替换，按「任务 + 协议 + 端点」冷却，避免告警风暴
+- **通知**：Webhook 与 SMTP 邮件，主题与正文均可用 `%#变量#%` 自定义模板，占位符统一单遍替换，按「任务 + 协议 + 端点」冷却，避免告警风暴
 - **日志可控**：异步单写者写入，按体积自动轮转，保留份数可配
 - **适合运维**：`--once` 单轮探测可直接接入脚本 / CI（不会提问、不会等待按键）；退出码区分参数、配置、运行期、不可达
 - **零依赖**：两种单文件产物任选——Native AOT 原生可执行（最小最快），或 .NET 自包含单文件；都不需要安装 .NET 运行时
@@ -132,12 +132,16 @@
     "email": {
       "enabled": false,
       "smtpServer": "smtp.example.com",
-      "port": 587,
+      "port": 465,
       "enableSsl": true,
       "username": "",
       "password": "",
       "from": "pings@example.com",
-      "to": ["ops@example.com"]
+      "to": ["ops@example.com"],
+      // 三项都留空即使用内置模板（随 global.language），见「通知内容 › 邮件模板」
+      "subject": "",
+      "content": "",
+      "htmlContent": ""
     }
   }
 }
@@ -242,15 +246,51 @@ UDP 没有握手，**没有回声服务时无法区分「主机不可达」和�
 | `logging.maxLogFiles` | `5` | 保留的历史日志份数（`Pings.1.log` …） |
 | `logging.enableConsoleLog` | `true` | 同时输出到控制台（实时表格运行时会自动抑制，避免破坏界面） |
 
-### 通知模板变量
+### 通知内容
 
-Webhook 的 `content` 与 `headers` 中可使用 `%#变量#%`，时间类变量支持 `%#CurrentTime:yyyy/MM/dd#%` 格式：
+Webhook 与邮件都支持 `%#变量#%` 模板，变量表完全相同：
 
-`Name`、`Target`、`Endpoint`（含协议与端口）、`Protocol`、`State`（当前界面语言下的状态文案）、`Status`（状态枚举名）、
-`Category`、`Severity`、`Delay`、`Connect`、`Jitter`、`LossRate`（百分比数值，如 `50.0`）、`TotalLossRate`、
-`FailureRate`、`TotalFailureRate`、`Sent`、`Received`、`Lost`、`Failed`、`LastEvent`、`Warning`、`CurrentTime`。
+`Name`、`Target`、`Endpoint`（含协议与端口）、`Protocol`、`State`（当前界面语言下的状态文案）、`Status`（状态枚举名）、`Category`、`Severity`、`Delay`、`Connect`、`Jitter`、`LossRate`（百分比数值，如 `50.0`）、`TotalLossRate`、`FailureRate`、`TotalFailureRate`、`Sent`、`Received`、`Lost`、`Failed`、`LastEvent`、`Warning`、`CurrentTime`。
 
-未识别的占位符会原样保留，便于排查模板笔误。
+时间类变量可带格式：`%#CurrentTime:yyyy/MM/dd HH:mm#%`。未识别的占位符原样保留，便于排查模板笔误；时间格式串非法时退回原值，不会因为一处笔误丢掉整条通知。
+
+#### Webhook 模板
+
+模板写在 `content` 与 `headers` 的值里。`content` 是整个请求体，默认按 `application/json` 发送，所以模板本身需要是合法 JSON。
+
+```jsonc
+"content": "{\"name\":\"%#Name#%\",\"state\":\"%#State#%\",\"delay\":%#Delay#%}"
+```
+
+#### 邮件模板
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `subject` | 空 | 主题模板；留空用内置主题 |
+| `content` | 空 | 纯文本正文模板；留空用内置正文 |
+| `htmlContent` | 空 | HTML 正文模板；留空时按 `content` 自动生成，`content` 也留空则用内置 HTML |
+
+留空即内置：主题为 `[Pings] <任务名> (<端点>) 状态：<状态文案>`，正文是包含任务、端点、协议、状态、延迟、丢包率、故障率、累计丢包率、最近事件与时间的字段表，文案跟随界面语言。
+
+正文是**纯文本模板**时，HTML 版本由它转义生成（换行变 `<br>`），不会套内置的字段表；想完全控制排版就填 `htmlContent`。
+
+```jsonc
+"email": {
+  "enabled": true,
+  "smtpServer": "smtp.example.com",
+  "port": 465,
+  "enableSsl": true,
+  "username": "pings@example.com",
+  "password": "********",
+  "from": "pings@example.com",
+  "to": ["ops@example.com"],
+  "subject": "[告警] %#Name#% %#State#%",
+  "content": "目标：%#Endpoint#%\n状态：%#State#%\n丢包率：%#LossRate#%%（窗口），累计 %#TotalLossRate#%%\n时间：%#CurrentTime#%",
+  "htmlContent": "<p><b>%#Name#%</b> 于 %#CurrentTime#% 变为 <b>%#State#%</b>，端点 %#Endpoint#%。</p>"
+}
+```
+
+`enableSsl: true` 表示**连接即 TLS**（隐式 TLS，通常端口 465）；`false` 为明文连接。当前不支持 STARTTLS 升级，所以 587 端口要么服务端接受明文，要么改用 465。
 
 ## 使用方法
 

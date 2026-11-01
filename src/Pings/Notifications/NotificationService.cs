@@ -64,7 +64,7 @@ namespace Pings.Notifications
             try
             {
                 HttpMethod method = new(string.IsNullOrWhiteSpace(webhook.Method) ? "POST" : webhook.Method.Trim().ToUpperInvariant());
-                Dictionary<string, string> variables = BuildVariables(snapshot);
+                Dictionary<string, string> variables = NotificationVariables.Create(snapshot);
                 string body = TemplateRenderer.Render(webhook.Content, variables);
 
                 using HttpRequestMessage request = new(method, webhook.Url);
@@ -117,12 +117,14 @@ namespace Pings.Notifications
                         message.To.Add(MailboxAddress.Parse(address));
                 }
 
-                message.Subject = string.Format(Resources.NotificationEmailSubject, snapshot.Name, snapshot.Endpoint, snapshot.StatusText);
+                EmailContent content = EmailContent.Create(email, snapshot);
+
+                message.Subject = content.Subject;
 
                 BodyBuilder body = new()
                 {
-                    TextBody = BuildPlainTextBody(snapshot),
-                    HtmlBody = BuildHtmlBody(snapshot)
+                    TextBody = content.TextBody,
+                    HtmlBody = content.HtmlBody
                 };
 
                 message.Body = body.ToMessageBody();
@@ -156,78 +158,6 @@ namespace Pings.Notifications
                 _logging.Log(string.Format(Resources.NotificationEmailFailed, ex.GetType().Name, ex.Message));
             }
         }
-
-        private static Dictionary<string, string> BuildVariables(ProbeTaskSnapshot snapshot) => new(StringComparer.Ordinal)
-        {
-            ["Name"] = snapshot.Name,
-            ["Target"] = snapshot.Target,
-            ["Endpoint"] = snapshot.Endpoint,
-            ["Protocol"] = snapshot.Protocol.ToConfigString(),
-            ["State"] = snapshot.StatusText,
-            ["Status"] = snapshot.Status.ToString(),
-            ["Category"] = snapshot.Category.ToString(),
-            ["Severity"] = snapshot.Severity.ToString(),
-            ["Delay"] = snapshot.DelayMs is { } delay ? $"{(int)delay}" : "-1",
-            ["Connect"] = snapshot.ConnectMs is { } connect ? $"{(int)connect}" : "-1",
-            ["Jitter"] = snapshot.Statistics.JitterMs is { } jitter ? $"{jitter:0.#}" : string.Empty,
-            ["LossRate"] = $"{snapshot.Statistics.WindowLossRate * 100:0.0}",
-            ["TotalLossRate"] = $"{snapshot.Statistics.TotalLossRate * 100:0.0}",
-            ["FailureRate"] = $"{snapshot.Statistics.WindowFailureRate * 100:0.0}",
-            ["TotalFailureRate"] = $"{snapshot.Statistics.TotalFailureRate * 100:0.0}",
-            ["Sent"] = snapshot.Statistics.Sent.ToString(),
-            ["Received"] = snapshot.Statistics.Received.ToString(),
-            ["Lost"] = snapshot.Statistics.Lost.ToString(),
-            ["Failed"] = snapshot.Statistics.Failed.ToString(),
-            ["LastEvent"] = snapshot.LastEvent,
-            ["Warning"] = snapshot.Warning ?? string.Empty,
-            ["CurrentTime"] = snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
-        };
-
-        private static string BuildPlainTextBody(ProbeTaskSnapshot snapshot)
-        {
-            StringBuilder body = new();
-            body.AppendLine($"{AppInfo.ProductName} {Resources.NotificationAlertTitle}");
-            body.AppendLine();
-
-            AppendLine(body, Resources.NotificationLabelTaskName, snapshot.Name);
-            AppendLine(body, Resources.NotificationLabelEndpoint, snapshot.Endpoint);
-            AppendLine(body, Resources.NotificationLabelProtocol, snapshot.Protocol.ToConfigString());
-            AppendLine(body, Resources.NotificationLabelStatus, snapshot.StatusText);
-            AppendLine(body, Resources.NotificationLabelDelay, snapshot.DelayText);
-            body.AppendLine(string.Format(Resources.NotificationLossRateWithWindow, snapshot.Statistics.WindowCount, snapshot.LossText));
-            body.AppendLine(string.Format(Resources.NotificationFailureRateWithWindow, snapshot.Statistics.WindowCount, snapshot.FailureText));
-            AppendLine(body, Resources.NotificationLabelTotalLossRate, $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
-            AppendLine(body, Resources.NotificationLabelLastEvent, snapshot.LastEvent);
-            AppendLine(body, Resources.NotificationLabelTimestamp, snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"));
-            return body.ToString();
-        }
-
-        private static string BuildHtmlBody(ProbeTaskSnapshot snapshot)
-        {
-            StringBuilder body = new();
-            body.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>");
-            body.AppendLine($"<h2>{AppInfo.ProductName} {Resources.NotificationAlertTitle}</h2>");
-            body.AppendLine("<table cellpadding=\"6\" cellspacing=\"0\" border=\"1\" style=\"border-collapse:collapse\">");
-            AppendRow(body, Resources.NotificationLabelTaskName, snapshot.Name);
-            AppendRow(body, Resources.NotificationLabelEndpoint, snapshot.Endpoint);
-            AppendRow(body, Resources.NotificationLabelProtocol, snapshot.Protocol.ToConfigString());
-            AppendRow(body, Resources.NotificationLabelStatus, snapshot.StatusText);
-            AppendRow(body, Resources.NotificationLabelDelay, snapshot.DelayText);
-            AppendRow(body, Resources.NotificationLabelLossRate, snapshot.LossText);
-            AppendRow(body, Resources.NotificationLabelFailureRate, snapshot.FailureText);
-            AppendRow(body, Resources.NotificationLabelTotalLossRate, $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
-            AppendRow(body, Resources.NotificationLabelLastEvent, snapshot.LastEvent);
-            AppendRow(body, Resources.NotificationLabelTimestamp, snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"));
-            body.AppendLine("</table>");
-            body.AppendLine("</body></html>");
-            return body.ToString();
-        }
-
-        private static void AppendLine(StringBuilder builder, string label, string value)
-            => builder.AppendLine(string.Format(Resources.NotificationLineFormat, label, value));
-
-        private static void AppendRow(StringBuilder builder, string key, string value)
-            => builder.AppendLine($"<tr><td><b>{System.Net.WebUtility.HtmlEncode(key)}</b></td><td>{System.Net.WebUtility.HtmlEncode(value)}</td></tr>");
 
         public void Dispose()
         {

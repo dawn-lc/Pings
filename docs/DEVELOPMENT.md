@@ -38,6 +38,8 @@ Pings/
 │  │     └─ SocketErrorMapping.cs   SocketError → ProbeStatus / 中文描述
 │  ├─ Notifications/
 │  │  ├─ NotificationService.cs Webhook + SMTP（尽力而为，失败只记日志）
+│  │  ├─ NotificationVariables.cs 模板变量表（Webhook 与邮件共用一份）
+│  │  ├─ EmailContent.cs      邮件主题 / 纯文本 / HTML 生成（含内置模板）
 │  │  └─ TemplateRenderer.cs    单遍模板渲染
 │  ├─ Diagnostics/
 │  │  ├─ AppInfo.cs             版本 / 仓库信息（读程序集元数据）
@@ -165,15 +167,17 @@ Pings/
 
 ## 通知
 
-- 模板渲染改为单遍扫描：不会出现「替换结果里又含占位符」导致的循环替换，
-  也不存在旧实现的 `seenStates` 集合上限问题。
+- 模板渲染改为单遍扫描：不会出现「替换结果里又含占位符」导致的循环替换，也不存在旧实现的 `seenStates` 集合上限问题。
+- 变量表在 `NotificationVariables.Create`，Webhook 与邮件共用一份——占位符名各写一份，迟早出现「Webhook 能用的变量邮件没有」这种莫名差异。
+- 邮件内容由 `EmailContent.Create` 生成，**不接触 SMTP**，因此可以纯函数测试：`subject` / `content` / `htmlContent` 留空即走内置模板（随界面语言），只配 `content` 时 HTML 由它转义生成（换行变 `<br>`，不套内置字段表）。
+- 内置 HTML 只用 table + 内联样式：邮件客户端会剥掉 `<style>`，也不保证支持 flex / grid。标题条按严重程度着色，恢复事件用绿色而非告警色。
 - 同一任务（`Name|Protocol|Endpoint`）在 `notificationCooldownSeconds` 内最多通知一次；
   `0` 表示不限制；Critical 级别的告警不受冷却限制（中断确认必须送达），但仍会刷新时间戳。
 - 冷却字典超过 1024 条时清理一天前的记录，避免长期运行无界增长。
 - 通知任务被登记并在 `ProbeMonitor.StopAsync` 等待（最多 10 秒），
   避免进程退出时丢掉在途请求。
 - Webhook 默认 `Content-Type: application/json`，可通过 `headers` 覆盖。
-- SMTP 使用 `StartTlsWhenAvailable`（`enableSsl` 为真时），连接/发送超时 20 秒。
+- SMTP 的 `enableSsl` 为真时用隐式 TLS（`SslOnConnect`，通常端口 465），为假时明文连接；**不支持 STARTTLS 升级**。连接与发送超时均为 20 秒。
 
 ## 告警文案为什么很短
 
@@ -333,6 +337,7 @@ ICMP 只做纯逻辑校验（真实发包留给 CI 的 `--once` 冒烟）。
 | `HttpProbeTransportTests` | 2xx、状态码异常、响应超时、HEAD→GET 回退 |
 | `WarningQueueTests` | FIFO、相邻去重、容量溢出计数、并发入队 |
 | `TemplateRendererTests` | 占位符、时间格式、未命中保留、自引用不死循环 |
+| `EmailContentTests` | 内置主题/正文、界面语言切换、严重程度着色、自定义模板、纯文本转 HTML 的转义、变量表区域性无关 |
 | `RotatingLogFileTests` | 追加、轮转、保留份数、Dispose 后不写 |
 | `CliOptionsTests` | 位置参数/命名参数、错误分支、退出码文案 |
 
