@@ -116,7 +116,7 @@ jobs:
         run: |
           $config = @'
           {
-            "tasks": [ { "name": "loopback", "ip": "127.0.0.1", "timeout": 2000 } ],
+            "tasks": [ { "name": "loopback", "protocol": "icmp", "target": "127.0.0.1", "timeout": 2000 } ],
             "logging": { "logFilePath": "smoke.log", "enableConsoleLog": false }
           }
           '@

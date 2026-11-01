@@ -17,13 +17,25 @@ Pings/
 │  │  ├─ ConfigValidator.cs     启动期区间校验（错误 / 警告两级）
 │  │  └─ LegacyConfigConverter.cs   旧 config.txt 迁移（含 GBK 编码探测）
 │  ├─ Monitoring/
-│  │  ├─ IcmpTaskOptions.cs     运行期不可变任务参数
-│  │  ├─ IcmpTestTask.cs        单个目标的探测循环与状态机
-│  │  ├─ IcmpStatistics.cs      滑窗统计（丢包率 / RTT / 抖动）
-│  │  ├─ IcmpTaskSnapshot.cs    只读快照（界面唯一输入）
-│  │  ├─ WarningQueue.cs        有界线程安全告警队列
-│  │  ├─ IcmpMonitor.cs         编排：日志 / 告警 / 通知，不接触 UI
-│  │  └─ IPStatusExtensions.cs  IPStatus → 故障分类 / 中文描述
+│  │  ├─ ProbeProtocol.cs       协议枚举与配置名解析
+│  │  ├─ ProbeStatus.cs         结果状态 / 故障类别 / 严重程度 / 派生事实
+│  │  ├─ ProbeResult.cs         单次探测结果
+│  │  ├─ ProbeTaskOptions.cs    运行期不可变任务参数（含协议专属字段）
+│  │  ├─ ProbeTask.cs           探测循环：统计 + 状态机 + 事件
+│  │  ├─ ProbeStateMachine.cs   告警判定（纯逻辑，注入 TimeProvider）
+│  │  ├─ ProbeStatistics.cs     滑窗统计（丢包率 / 故障率 / RTT 分布 / 抖动）
+│  │  ├─ ProbeTaskSnapshot.cs   只读快照（界面唯一输入）
+│  │  ├─ UdpPayloadResolver.cs  udpPayload 解析（文本 / base64: / file:）
+│  │  ├─ WarningQueue.cs        有界线程安全告警队列（相邻去重）
+│  │  ├─ ProbeMonitor.cs        编排：日志 / 告警 / 通知，不接触 UI
+│  │  └─ Transports/
+│  │     ├─ IProbeTransport.cs      探测 I/O 抽象
+│  │     ├─ ProbeTransportFactory.cs
+│  │     ├─ IcmpProbeTransport.cs
+│  │     ├─ TcpProbeTransport.cs
+│  │     ├─ UdpProbeTransport.cs
+│  │     ├─ HttpProbeTransport.cs
+│  │     └─ SocketErrorMapping.cs   SocketError → ProbeStatus / 中文描述
 │  ├─ Notifications/
 │  │  ├─ NotificationService.cs Webhook + SMTP（尽力而为，失败只记日志）
 │  │  └─ TemplateRenderer.cs    单遍模板渲染
@@ -46,7 +58,10 @@ Pings/
 `build/` 与 `docs/` 留在仓库根：前者是构建基础设施（RoslynCodeTaskFactory 直接读文件，不在任何项目的编译范围内），后者不随程序发布。主项目位于 `src/Pings/` 后，不再需要用 `DefaultItemExcludes` 手动排除 `Pings.Tests/**` 与 `build/**`。
 
 依赖方向：`Program` → 各模块；`Monitoring` 与 `Notifications` 之间只通过
-`IcmpTaskSnapshot` 传递数据；`Ui` 只依赖 `Monitoring` 的快照。任何模块都不反向依赖 `Program`。
+`ProbeTaskSnapshot` 传递数据；`Ui` 只依赖 `Monitoring` 的快照。任何模块都不反向依赖 `Program`。
+
+协议差异全部收敛在 `Monitoring/Transports/`：`ProbeTask` 只看得到 `ProbeResult`，
+`IPStatus` 不会渗出 ICMP 实现。
 
 ## 线程模型
 
@@ -54,7 +69,7 @@ Pings/
 
 | 角色 | 线程 | 职责 |
 |------|------|------|
-| 探测循环 | 每任务一个 Task | 发送 Ping、更新统计与状态、触发事件 |
+| 探测循环 | 每任务一个 Task | 按协议探测、更新统计与状态机、触发事件 |
 | 事件处理 | 探测循环线程 | 写日志、入告警队列、派发通知（不碰 UI） |
 | 渲染循环 | 前台 `MonitorView` | 每个刷新周期读取快照，重建整张表 |
 | 按键处理 | 前台循环 | 读取 C/Q，调用监控器的确认方法 |
@@ -63,30 +78,73 @@ Pings/
 
 由此得到两条硬规则：
 
-1. **界面只读快照**。`MonitorView.BuildTable()` 只调用 `IcmpMonitor.Snapshots()`，
+1. **界面只读快照**。`MonitorView.BuildTable()` 只调用 `ProbeMonitor.Snapshots()`，
    不订阅任务事件、不共享 `Table` 实例。旧实现从后台线程直接改 Spectre 表格，
    与渲染线程并发写入，属于数据竞争（表现为乱码、错行或偶发异常）。
 2. **事件只描述「发生了什么」**。事件里带的是不可变快照，订阅方不需要回读任务字段。
 
 ## 探测与统计语义
 
-- 单次失败（超时、不可达、解析异常）都记为一次丢包（`IcmpStatistics.Record(null)`）。
-- `maxRecentPackets` 决定滑窗长度；滑窗满后覆盖最旧样本，用于界面丢包率。
+- 单次失败（超时、不可达、端口关闭、DNS / TLS 失败、状态码异常）都计入累计 `Sent`，
+  但只有**完全没有回应**（`Timeout` / `NoReply`）才算丢包，其余计入故障率。
+- `maxRecentPackets` 决定滑窗长度；滑窗满后覆盖最旧样本，用于界面丢包率与故障率。
 - 累计丢包率使用全部样本（`Lost / Sent`），不会因窗口滚动而回落。
-- 抖动使用 RFC 3550 风格的 EWMA（增益 1/16），只对成功探测更新。
-- 延迟波动判定：本次成功 RTT 比**上一次成功** RTT 高出超过阈值，只在上升方向告警。
-- 丢包告警：
-  - `packetLossDuration > 0 && packetLossCount > 0` → 时长与次数同时满足才触发；
-  - 只配置一个 → 按配置项判定；
-  - 两个都为 0 → 不触发（配置校验会给出警告）。
-  - 每段连续丢包只触发一次，恢复成功后重置。
+- 窗口统计在 `Snapshot()` 时单遍扫描完成，不做增量聚合——窗口回绕时扣减聚合量容易漂移，
+  而单遍扫描的开销（窗口上限 10 万、刷新频率 1Hz）完全可以接受。
+- RTT 极值 / 均值 / p95 / 标准差只统计窗口内成功样本；
+  成功样本超过 4096 时 p95 按固定步长抽样，是近似值。
+- 抖动使用 RFC 3550 风格的 EWMA（增益 1/16），只在连续成功样本间更新，跨丢包重新起算。
+- `LastRttMs` 跨丢包保留（最近一次成功 RTT）；快照里的 `DelayMs` 只表示「本次是否成功」。
+
+## 告警语义
+
+- 状态事件只在**故障类别**变化时产生。同一类别内的 `Timeout ↔ NoReply` 只更新快照与日志，
+  不重复入队、不重复通知。
+- 中断升级（`ProbeStateMachine.EscalateOutage`）：
+  - 同时配置次数与时长 → 达到次数先发 Warning（疑似），达到时长再发 Critical（确认）；
+  - 只配置一个阈值 → 达到即 Critical；
+  - 两个都为 0 → 不告警（配置校验会给出警告）；
+  - 每个 episode 每个级别只触发一次，成功回应后重置。
+- 已确认的长故障**不计入**短故障；未确认就恢复的 episode 计入短故障窗口，
+  窗口内达到 `lossFlapCount` 判定为抖动链路（同一窗口只告警一次）。
+- 延迟波动用 RFC 6298 的 SRTT / RTTVAR 双 EWMA：
+  - 预热 5 个成功样本后才开始判定；
+  - 阈值 `max(significantDelayThreshold, 4 × RTTVAR)`，连续 2 个超限样本才确认；
+  - 回落到半个阈值以内才解除（施密特回差）；
+  - **超限样本不参与基线更新**：否则一次尖峰会把 RTTVAR 撑大，紧随其后的同样高的样本
+    立刻变得「正常」，连续确认永远凑不满；
+  - 恢复当次不判波动（基线已过期，报出来的「升高」没有意义）。
+- 时长全部用 `TimeProvider.GetTimestamp()` 单调时钟计算，系统校时 / 夏令时不会让 episode 时长跳变。
+- `LastEvent` 按严重程度保留：Critical > Warning > Info，低优先级不得覆盖高优先级。
+- 告警队列相邻重复消息合并为一条并计数（`请求超时 11:02:15 ×3`），容量溢出时累计 `Dropped`，
+  表格 caption 会提示被丢弃的告警数。
 
 ## 配置校验
 
-`ConfigValidator` 把所有「能提前发现」的问题放在启动时：
+`ConfigValidator` 把所有「能提前发现」的问题放在启动时，并按协议分支校验：
 
-- 错误（阻止启动）：缺少任务、目标非法、数值越界、启用通知但必填项缺失、URL 非法等；
-- 警告（继续运行）：名称重复、目标重复、间隔小于超时、丢包双阈值都为 0 等。
+- 错误（阻止启动）：缺少任务、未知 protocol、目标非法、tcp/udp 缺少端口、
+  http 的 target 不是绝对 http/https 地址、httpMethod 不在白名单、expectedStatus 越界、
+  udpPayload 解析失败（文件不存在 / Base64 非法 / 解码为空 / 超过 65507 字节）、
+  数值越界、启用通知但必填项缺失等；
+- 警告（继续运行）：名称重复、同一端点重复（同主机不同协议/端口不算重复）、
+  icmp 配置了 port、`interval < timeout`、丢包双阈值都为 0 等。
+
+### udpPayload 的解析
+
+`UdpPayloadResolver` 是唯一真相源，校验与运行期共用它，所以不会出现
+「启动时说可以、跑起来却不行」。判定顺序：
+
+1. `base64:<数据>` → 解码成二进制；
+2. `file:<路径>` → 读文件原始字节；
+3. 其他值 → **若该值指向存在的文件**则按文件读，否则按 UTF-8 文本。
+
+第 3 条是为了让用户直接把路径写进 `udpPayload`；代价是「同名文件恰好存在」时会被当成路径，
+需要发送这种字面文本时加 `base64:` 即可。
+
+相对路径以 **配置文件所在目录** 为基准（`Program` 把该目录同时传给
+`ConfigValidator.Validate` 与 `ProbeTaskOptions.FromJson`），与 `logging.logFilePath` 保持一致。
+负载在启动时一次性读入 `ProbeTaskOptions.UdpPayloadBytes`，运行期不再重读文件。
 
 `ConfigLoader.SaveConfig` 采用「写临时文件 → 原子替换」，避免写一半的文件被当成有效配置。
 
@@ -105,8 +163,10 @@ Pings/
 
 - 模板渲染改为单遍扫描：不会出现「替换结果里又含占位符」导致的循环替换，
   也不存在旧实现的 `seenStates` 集合上限问题。
-- 同一目标在 `notificationCooldownSeconds` 内最多通知一次；`0` 表示不限制。
-- 通知任务被登记并在 `IcmpMonitor.StopAsync` 等待（最多 10 秒），
+- 同一任务（`Name|Protocol|Endpoint`）在 `notificationCooldownSeconds` 内最多通知一次；
+  `0` 表示不限制；Critical 级别的告警不受冷却限制（中断确认必须送达），但仍会刷新时间戳。
+- 冷却字典超过 1024 条时清理一天前的记录，避免长期运行无界增长。
+- 通知任务被登记并在 `ProbeMonitor.StopAsync` 等待（最多 10 秒），
   避免进程退出时丢掉在途请求。
 - Webhook 默认 `Content-Type: application/json`，可通过 `headers` 覆盖。
 - SMTP 使用 `StartTlsWhenAvailable`（`enableSsl` 为真时），连接/发送超时 20 秒。
@@ -117,6 +177,14 @@ Pings/
 Spectre 的 `Overflow.Ellipsis` 只截断“超长单词”，遇到空格仍会折行，
 一行变三行会把表格撑高，越出窗口后就开始滚动/错位。完整时间戳由表格标题（日期）
 与日志文件负责，界面只需要能分辨“什么时候发生的”。
+
+同一条约束也适用于**状态列**：`ProbeResult.Detail` 会被直接渲染成状态文本，因此：
+
+- HTTP 只用 `HTTP 404`，**不带英文原因短语**（`HTTP 404 File not found` 带空格会被折行）；
+- 超时类文案写成 `连接超时(2000ms)` 而不是 `2000ms 内未完成连接`。
+
+套接字错误同理：`SocketException.Message` 是整句英文，必须经 `SocketErrorMapping.Describe`
+转成 `连接被拒绝` 这类短中文再进快照。
 
 ## 命令行与退出码
 
@@ -237,22 +305,30 @@ Windows 控制台的双击启动曾出现「标题重复、表格错位、说明
 
 ## 测试
 
-`Pings.Tests` 只覆盖不依赖真实网络的纯逻辑：
+`Pings.Tests` 的默认用例不依赖外网；TCP / UDP / HTTP 传输层全部跑在本机回环上，
+ICMP 只做纯逻辑校验（真实发包留给 CI 的 `--once` 冒烟）。
 
 | 文件 | 守护内容 |
 |------|----------|
 | `ConfigLoaderTests` | 往返一致、BOM、原子保存、非法 JSON |
-| `ConfigValidatorTests` | 区间校验、重复项警告、通知必填项 |
+| `ConfigValidatorTests` | 区间校验、协议分支校验、重复项警告、通知必填项 |
 | `LegacyConfigConverterTests` | 旧格式字段映射、注释/空行、默认值 |
-| `IcmpStatisticsTests` | 滑窗丢包率、累计丢包率、RTT 极值、抖动方向 |
-| `WarningQueueTests` | FIFO、容量上限丢最旧、并发入队 |
+| `ProbeStatisticsTests` | 滑窗丢包率、故障率、RTT 极值 / p95 / 标准差、抖动重算 |
+| `ProbeStateMachineTests` | 两级中断升级、短故障、去重、SRTT 波动确认与回差 |
+| `ProbeTaskTests` | 快照更新、事件、异常降级、传输层释放 |
+| `ProbeStatusTests` | 故障分类、丢包 / 故障 / 中断口径、协议名解析 |
+| `ProbeTaskOptionsTests` | 主机 / URL 校验、间隔推导、JSON 往返、端点文本 |
+| `TcpProbeTransportTests` | 可连接 / 关闭端口 |
+| `UdpProbeTransportTests` | 回声成功 / 端口不可达 / 发出去的确实是解析后的字节 |
+| `UdpPayloadResolverTests` | 文本 / base64 / 文件三种来源、相对路径基准、各种失败分支 |
+| `HttpProbeTransportTests` | 2xx、状态码异常、响应超时、HEAD→GET 回退 |
+| `WarningQueueTests` | FIFO、相邻去重、容量溢出计数、并发入队 |
 | `TemplateRendererTests` | 占位符、时间格式、未命中保留、自引用不死循环 |
 | `RotatingLogFileTests` | 追加、轮转、保留份数、Dispose 后不写 |
 | `CliOptionsTests` | 位置参数/命名参数、错误分支、退出码文案 |
-| `IPStatusExtensionsTests` | 分类映射、中文描述完整性 |
-| `IcmpTaskOptionsTests` | 目标校验、间隔推导、JSON 往返、快照文本 |
 
-CI 额外做 AOT 冒烟：`--version` / `--help` / `--once 127.0.0.1`（回环地址不依赖外网）。
+CI 额外做 AOT 冒烟：`--version` / `--help` / `--once`（回环 ICMP，回环地址不依赖外网）。
+冒烟配置使用 `protocol` + `target` 字段（旧字段名 `ip` 会在启动期校验失败，返回退出码 2）。
 
 ## 构建与发布
 
@@ -285,6 +361,19 @@ CI 用 `windows-latest`。非 Windows 平台可以发布自己的 AOT（`-r linu
 AOT 发布（注入 `AppVersion` / `AppVersionType`）→ 断言单 exe / 无 pdb / 体积 / 版本号 →
 回环冒烟 → 创建 Release。
 
+### 多协议与 AOT
+
+- 四个传输层只用 BCL 套接字 API（`Ping` / `Socket` / `SocketsHttpHandler`），没有反射与动态代码，可直接被裁剪。
+- HTTP 探测自己实现 `ConnectCallback` 只是为了拿到精确的连接耗时；回调参数是强类型的
+  `SocketsHttpConnectionContext`，不经过反射路径。
+- 新增配置类型必须在 `JsonContext` 登记（源生成）：漏登记时普通构建也能通过，
+  但 AOT 产物会在反序列化时失败——这是本项目最容易踩的裁剪坑。
+- 冒烟覆盖范围：CI 只在 AOT 产物上跑回环 ICMP（不依赖外网、不需要起服务）；
+  TCP / UDP / HTTP 的具体行为由单元测试在本机回环端口上验证（见「测试」一节的表格）。
+  发布前若改了传输层，建议手工跑一次 README 的「本地多协议冒烟」配置。
+- Linux / macOS 上 ICMP 需要 ICMP datagram 套接字权限（`net.ipv4.ping_group_range` 或 `CAP_NET_RAW`），
+  拿不到时按 `LocalError` 记录，不会中断探测循环。
+
 ### AOT 相关取舍（与参考项目一致）
 
 | 设置 | 作用 |
@@ -301,7 +390,9 @@ AOT 发布（注入 `AppVersion` / `AppVersionType`）→ 断言单 exe / 无 pd
 解析顺序 `-p:UpxPath` → `tools/upx/upx.exe` → 自动下载最新 win64 版。
 拿不到只警告不失败（体积优化而已）。
 
-两个必须记住的点：
+实测：未压缩 9.1 MB（含四种协议的传输层），UPX `--best` 后 3.8 MB。
+
+四个必须记住的点：
 
 1. **必须挂在 `AfterTargets="CopyNativeBinary"`**。该 target 本身也是 `AfterTargets="Publish"`，
    两个同挂 Publish 的 target 顺序不确定 —— UPX 先跑就会压中间产物，随后被
@@ -310,6 +401,12 @@ AOT 发布（注入 `AppVersion` / `AppVersionType`）→ 断言单 exe / 无 pd
    `Condition`，那时路径变量还是空的；一旦写进 Condition，整个 target 会被跳过（含依赖），
    压缩静默失效（实测踩过：日志里看得见"使用指定的 UPX"，产物仍是未压缩体积）。
    正确做法是把路径判断放到 task 级 `Condition` 上（见 `Pings.csproj`）。
+3. **不能把「目标是不是 Windows」缓存成顶层属性**。`RuntimeIdentifier` 由 pubxml 在文件末尾
+   导入后才生效，顶层属性求值早于它，读到的永远是空值——结果 UPX 的两个 target 都因条件
+   不成立被跳过，产物保持 9.1 MB 而日志里没有任何提示（CI 的体积断言会拦下，本地很容易误以为
+   已压缩）。判断要写成 target 执行期的内联表达式 `$(RuntimeIdentifier.StartsWith('win'))`。
+4. **UPX 生效与否看日志**：正常会打印 `UPX 压缩（5.3.0）：…`。只跑 `dotnet publish`
+   默认 verbosity 看不到，用 `-v:n` 确认；或者直接看产物体积（3.8 MB 对 9.1 MB）。
 
 CI 与 Release 的 `env.UPX_VERSION` 必须一致并固定，否则同一个 tag 两次构建的产物不可重现。
 

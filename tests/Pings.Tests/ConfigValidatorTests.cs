@@ -8,8 +8,8 @@ public class ConfigValidatorTests
     {
         Tasks =
         [
-            new IcmpTaskConfigJson { Name = "Cloudflare", IP = "1.1.1.1" },
-            new IcmpTaskConfigJson { Name = "Google", IP = "8.8.8.8" }
+            new ProbeTaskConfigJson { Name = "Cloudflare", Target = "1.1.1.1" },
+            new ProbeTaskConfigJson { Name = "Google", Target = "8.8.8.8" }
         ]
     };
 
@@ -38,7 +38,7 @@ public class ConfigValidatorTests
     public void 非法目标_报错()
     {
         AppConfig config = ValidConfig();
-        config.Tasks[0].IP = "   ";
+        config.Tasks[0].Target = "   ";
 
         ConfigValidationResult result = ConfigValidator.Validate(config);
 
@@ -66,13 +66,13 @@ public class ConfigValidatorTests
     {
         AppConfig config = ValidConfig();
         config.Tasks[1].Name = config.Tasks[0].Name;
-        config.Tasks[1].IP = config.Tasks[0].IP;
+        config.Tasks[1].Target = config.Tasks[0].Target;
 
         ConfigValidationResult result = ConfigValidator.Validate(config);
 
         Assert.True(result.IsValid);
         Assert.Contains(result.Warnings, warning => warning.Contains("任务名称重复"));
-        Assert.Contains(result.Warnings, warning => warning.Contains("目标地址重复"));
+        Assert.Contains(result.Warnings, warning => warning.Contains("目标重复"));
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class ConfigValidatorTests
         ConfigValidationResult result = ConfigValidator.Validate(config);
 
         Assert.True(result.IsValid);
-        Assert.Contains(result.Warnings, warning => warning.Contains("丢包告警"));
+        Assert.Contains(result.Warnings, warning => warning.Contains("中断告警"));
     }
 
     [Fact]
@@ -142,11 +142,201 @@ public class ConfigValidatorTests
     }
 
     [Fact]
+    public void TCP缺少端口_报错()
+    {
+        AppConfig config = new()
+        {
+            Tasks = [new ProbeTaskConfigJson { Name = "db", Protocol = "tcp", Target = "10.0.0.5" }]
+        };
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("端口"));
+    }
+
+    [Fact]
+    public void HTTP目标不是URL_报错()
+    {
+        AppConfig config = new()
+        {
+            Tasks = [new ProbeTaskConfigJson { Name = "web", Protocol = "http", Target = "example.com" }]
+        };
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("http/https"));
+    }
+
+    [Fact]
+    public void 未知协议_报错()
+    {
+        AppConfig config = new()
+        {
+            Tasks = [new ProbeTaskConfigJson { Name = "x", Protocol = "smtp", Target = "1.1.1.1" }]
+        };
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("protocol"));
+    }
+
+    [Fact]
+    public void HTTP方法不在白名单_报错()
+    {
+        AppConfig config = new()
+        {
+            Tasks =
+            [
+                new ProbeTaskConfigJson
+                {
+                    Name = "web",
+                    Protocol = "http",
+                    Target = "https://example.com/health",
+                    HttpMethod = "POST"
+                }
+            ]
+        };
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("httpMethod"));
+    }
+
+    [Fact]
+    public void ICMP配置端口_给出警告而不是错误()
+    {
+        AppConfig config = ValidConfig();
+        config.Tasks[0].Port = 80;
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, warning => warning.Contains("port"));
+    }
+
+    [Fact]
+    public void 间隔小于超时_给出警告()
+    {
+        AppConfig config = ValidConfig();
+        config.Tasks[0].Timeout = 2000;
+        config.Tasks[0].Interval = 500;
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, warning => warning.Contains("interval"));
+    }
+
+    [Fact]
+    public void 协议与端口不同的同一主机不算重复()
+    {
+        AppConfig config = new()
+        {
+            Tasks =
+            [
+                new ProbeTaskConfigJson { Name = "icmp", Target = "10.0.0.5" },
+                new ProbeTaskConfigJson { Name = "tcp", Protocol = "tcp", Target = "10.0.0.5", Port = 5432 }
+            ]
+        };
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Warnings, warning => warning.Contains("目标重复"));
+    }
+
+    [Fact]
+    public void UDP负载文件不存在_报错()
+    {
+        AppConfig config = new()
+        {
+            Tasks =
+            [
+                new ProbeTaskConfigJson
+                {
+                    Name = "udp",
+                    Protocol = "udp",
+                    Target = "127.0.0.1",
+                    Port = 5353,
+                    UdpPayload = "file:no-such-payload.bin"
+                }
+            ]
+        };
+
+        string directory = Path.Combine(Path.GetTempPath(), "pings-validator-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            ConfigValidationResult result = ConfigValidator.Validate(config, directory);
+
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Errors, error => error.Contains("不存在"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UDP负载Base64非法_报错()
+    {
+        AppConfig config = new()
+        {
+            Tasks =
+            [
+                new ProbeTaskConfigJson
+                {
+                    Name = "udp",
+                    Protocol = "udp",
+                    Target = "127.0.0.1",
+                    Port = 5353,
+                    UdpPayload = "base64:***bad***"
+                }
+            ]
+        };
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("base64"));
+    }
+
+    [Fact]
+    public void UDP负载Base64合法_通过校验()
+    {
+        AppConfig config = new()
+        {
+            Tasks =
+            [
+                new ProbeTaskConfigJson
+                {
+                    Name = "udp",
+                    Protocol = "udp",
+                    Target = "127.0.0.1",
+                    Port = 5353,
+                    UdpPayload = "base64:AAECAw=="
+                }
+            ]
+        };
+
+        ConfigValidationResult result = ConfigValidator.Validate(config);
+
+        Assert.True(result.IsValid);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
     public void Describe_同时输出错误与警告()
     {
         AppConfig config = ValidConfig();
         config.Tasks[0].Timeout = 0;
-        config.Tasks[1].IP = config.Tasks[0].IP;
+        config.Tasks[1].Target = config.Tasks[0].Target;
 
         ConfigValidationResult result = ConfigValidator.Validate(config);
         string text = ConfigValidator.Describe(result);

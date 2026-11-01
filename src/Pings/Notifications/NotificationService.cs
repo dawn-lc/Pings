@@ -44,7 +44,7 @@ namespace Pings.Notifications
         /// <summary>Webhook 或 Email 至少启用了一项。</summary>
         public bool IsEnabled => _config.Webhook.Enabled || _config.Email.Enabled;
 
-        public async Task NotifyStatusChangeAsync(IcmpTaskSnapshot snapshot, CancellationToken token = default)
+        public async Task NotifyStatusChangeAsync(ProbeTaskSnapshot snapshot, CancellationToken token = default)
         {
             if (snapshot is null)
                 return;
@@ -56,7 +56,7 @@ namespace Pings.Notifications
                 await SendEmailAsync(snapshot, token).ConfigureAwait(false);
         }
 
-        private async Task SendWebhookAsync(IcmpTaskSnapshot snapshot, CancellationToken token)
+        private async Task SendWebhookAsync(ProbeTaskSnapshot snapshot, CancellationToken token)
         {
             WebhookConfig webhook = _config.Webhook;
 
@@ -101,7 +101,7 @@ namespace Pings.Notifications
             }
         }
 
-        private async Task SendEmailAsync(IcmpTaskSnapshot snapshot, CancellationToken token)
+        private async Task SendEmailAsync(ProbeTaskSnapshot snapshot, CancellationToken token)
         {
             EmailConfig email = _config.Email;
 
@@ -116,7 +116,7 @@ namespace Pings.Notifications
                         message.To.Add(MailboxAddress.Parse(address));
                 }
 
-                message.Subject = $"[{AppInfo.ProductName}] {snapshot.Name} ({snapshot.Target}) 状态：{snapshot.StatusText}";
+                message.Subject = $"[{AppInfo.ProductName}] {snapshot.Name} ({snapshot.Endpoint}) 状态：{snapshot.StatusText}";
 
                 BodyBuilder body = new()
                 {
@@ -156,52 +156,64 @@ namespace Pings.Notifications
             }
         }
 
-        private static Dictionary<string, string> BuildVariables(IcmpTaskSnapshot snapshot) => new(StringComparer.Ordinal)
+        private static Dictionary<string, string> BuildVariables(ProbeTaskSnapshot snapshot) => new(StringComparer.Ordinal)
         {
             ["Name"] = snapshot.Name,
-            ["IP"] = snapshot.Target,
+            ["Target"] = snapshot.Target,
+            ["Endpoint"] = snapshot.Endpoint,
+            ["Protocol"] = snapshot.Protocol.ToConfigString(),
             ["State"] = snapshot.StatusText,
             ["Status"] = snapshot.Status.ToString(),
             ["Category"] = snapshot.Category.ToString(),
+            ["Severity"] = snapshot.Severity.ToString(),
             ["Delay"] = snapshot.DelayMs is { } delay ? $"{(int)delay}" : "-1",
-            ["Jitter"] = $"{snapshot.JitterMs:0.#}",
-            ["LossRate"] = $"{snapshot.WindowLossRate * 100:0.0}",
-            ["TotalLossRate"] = $"{snapshot.TotalLossRate * 100:0.0}",
-            ["Sent"] = snapshot.Sent.ToString(),
-            ["Received"] = snapshot.Received.ToString(),
+            ["Connect"] = snapshot.ConnectMs is { } connect ? $"{(int)connect}" : "-1",
+            ["Jitter"] = snapshot.Statistics.JitterMs is { } jitter ? $"{jitter:0.#}" : string.Empty,
+            ["LossRate"] = $"{snapshot.Statistics.WindowLossRate * 100:0.0}",
+            ["TotalLossRate"] = $"{snapshot.Statistics.TotalLossRate * 100:0.0}",
+            ["FailureRate"] = $"{snapshot.Statistics.WindowFailureRate * 100:0.0}",
+            ["TotalFailureRate"] = $"{snapshot.Statistics.TotalFailureRate * 100:0.0}",
+            ["Sent"] = snapshot.Statistics.Sent.ToString(),
+            ["Received"] = snapshot.Statistics.Received.ToString(),
+            ["Lost"] = snapshot.Statistics.Lost.ToString(),
+            ["Failed"] = snapshot.Statistics.Failed.ToString(),
             ["LastEvent"] = snapshot.LastEvent,
             ["Warning"] = snapshot.Warning ?? string.Empty,
             ["CurrentTime"] = snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
         };
 
-        private static string BuildPlainTextBody(IcmpTaskSnapshot snapshot)
+        private static string BuildPlainTextBody(ProbeTaskSnapshot snapshot)
         {
             StringBuilder body = new();
             body.AppendLine($"{AppInfo.ProductName} 告警");
             body.AppendLine();
             body.AppendLine($"任务名称：{snapshot.Name}");
-            body.AppendLine($"目标地址：{snapshot.Target}");
+            body.AppendLine($"目标端点：{snapshot.Endpoint}");
+            body.AppendLine($"探测协议：{snapshot.Protocol.ToConfigString()}");
             body.AppendLine($"当前状态：{snapshot.StatusText}");
             body.AppendLine($"网络延迟：{snapshot.DelayText}");
-            body.AppendLine($"丢包率(最近{snapshot.Sent}次统计窗口)：{snapshot.LossText}");
-            body.AppendLine($"累计丢包率：{snapshot.TotalLossRate * 100:0.0}%");
+            body.AppendLine($"丢包率(窗口 {snapshot.Statistics.WindowCount} 次)：{snapshot.LossText}");
+            body.AppendLine($"故障率(窗口 {snapshot.Statistics.WindowCount} 次)：{snapshot.FailureText}");
+            body.AppendLine($"累计丢包率：{snapshot.Statistics.TotalLossRate * 100:0.0}%");
             body.AppendLine($"最近事件：{snapshot.LastEvent}");
             body.AppendLine($"发生时间：{snapshot.Timestamp:yyyy-MM-dd HH:mm:ss}");
             return body.ToString();
         }
 
-        private static string BuildHtmlBody(IcmpTaskSnapshot snapshot)
+        private static string BuildHtmlBody(ProbeTaskSnapshot snapshot)
         {
             StringBuilder body = new();
             body.AppendLine("<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body>");
             body.AppendLine($"<h2>{AppInfo.ProductName} 告警</h2>");
             body.AppendLine("<table cellpadding=\"6\" cellspacing=\"0\" border=\"1\" style=\"border-collapse:collapse\">");
             AppendRow(body, "任务名称", snapshot.Name);
-            AppendRow(body, "目标地址", snapshot.Target);
+            AppendRow(body, "目标端点", snapshot.Endpoint);
+            AppendRow(body, "探测协议", snapshot.Protocol.ToConfigString());
             AppendRow(body, "当前状态", snapshot.StatusText);
             AppendRow(body, "网络延迟", snapshot.DelayText);
             AppendRow(body, "丢包率", snapshot.LossText);
-            AppendRow(body, "累计丢包率", $"{snapshot.TotalLossRate * 100:0.0}%");
+            AppendRow(body, "故障率", snapshot.FailureText);
+            AppendRow(body, "累计丢包率", $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
             AppendRow(body, "最近事件", snapshot.LastEvent);
             AppendRow(body, "发生时间", snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"));
             body.AppendLine("</table>");

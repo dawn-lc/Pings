@@ -23,7 +23,7 @@ namespace Pings.Ui
     /// </remarks>
     public sealed class MonitorView
     {
-        private readonly IcmpMonitor _monitor;
+        private readonly ProbeMonitor _monitor;
         private readonly TimeSpan _refreshInterval;
         private readonly Action? _prepareAlternateScreen;
 
@@ -32,7 +32,7 @@ namespace Pings.Ui
         /// 必须放在备用缓冲区<strong>内部</strong>执行：切换缓冲区会重置窗口字体，
         /// 在外面设好的字体进入后会被覆盖回控制台默认字体。
         /// </param>
-        public MonitorView(IcmpMonitor monitor, TimeSpan refreshInterval, Action? prepareAlternateScreen = null)
+        public MonitorView(ProbeMonitor monitor, TimeSpan refreshInterval, Action? prepareAlternateScreen = null)
         {
             _monitor = monitor ?? throw new ArgumentNullException(nameof(monitor));
             _refreshInterval = refreshInterval <= TimeSpan.Zero
@@ -112,19 +112,23 @@ namespace Pings.Ui
 
         private Table BuildTable()
         {
-            IReadOnlyList<IcmpTaskSnapshot> snapshots = _monitor.Snapshots();
+            IReadOnlyList<ProbeTaskSnapshot> snapshots = _monitor.Snapshots();
             IReadOnlyList<MonitorColumn> columns = MonitorLayout.ColumnsFor(AnsiConsole.Profile.Width);
             int capacity = MonitorLayout.DataRowCapacity(AnsiConsole.Profile.Height);
 
-            MonitorLayout.Selection<IcmpTaskSnapshot> selection = MonitorLayout.Select(
+            MonitorLayout.Selection<ProbeTaskSnapshot> selection = MonitorLayout.Select(
                 snapshots,
                 capacity,
-                snapshot => snapshot.Category != IcmpFaultCategory.None);
+                snapshot => snapshot.Category != ProbeFaultCategory.None);
+
+            long droppedWarnings = 0;
+            foreach (ProbeTaskSnapshot snapshot in snapshots)
+                droppedWarnings += snapshot.DroppedWarnings;
 
             Table table = new()
             {
                 Title = new TableTitle($"{DateTime.Now:yyyy年MM月dd日 HH:mm:ss} 网络监测"),
-                Caption = new TableTitle(BuildCaption(selection.Hidden, columns.Count < 6)),
+                Caption = new TableTitle(BuildCaption(selection.Hidden, columns.Count < 6, droppedWarnings)),
                 Expand = true
             };
 
@@ -137,7 +141,7 @@ namespace Pings.Ui
                 return table;
             }
 
-            foreach (IcmpTaskSnapshot snapshot in selection.Visible)
+            foreach (ProbeTaskSnapshot snapshot in selection.Visible)
                 table.AddRow([.. columns.Select(column => (IRenderable)BuildCell(column, snapshot))]);
 
             return table;
@@ -160,7 +164,7 @@ namespace Pings.Ui
             _ => Cell("-")
         };
 
-        private static string BuildCaption(int hidden, bool columnsTrimmed)
+        private static string BuildCaption(int hidden, bool columnsTrimmed, long droppedWarnings)
         {
             List<string> parts = ["确认警告(C) / 退出(Q)"];
 
@@ -169,6 +173,9 @@ namespace Pings.Ui
 
             if (columnsTrimmed)
                 parts.Add("窗口较窄，已隐藏部分列");
+
+            if (droppedWarnings > 0)
+                parts.Add($"已丢弃 {droppedWarnings} 条旧告警");
 
             return string.Join(" · ", parts);
         }
@@ -191,13 +198,13 @@ namespace Pings.Ui
         /// 注意 <c>TableColumn.NoWrap</c> 只影响列宽测算，并不会阻止空格式换行
         /// （如 “171ms ±2.3ms”），所以不要把“不折行”寄托在它身上。
         /// </remarks>
-        private static Text BuildCell(MonitorColumn column, IcmpTaskSnapshot snapshot) => column switch
+        private static Text BuildCell(MonitorColumn column, ProbeTaskSnapshot snapshot) => column switch
         {
             MonitorColumn.Name => Cell(snapshot.Name),
-            MonitorColumn.Target => Cell(snapshot.Target),
+            MonitorColumn.Target => Cell(snapshot.Endpoint),
             MonitorColumn.Status => Cell(snapshot.StatusText, StatusStyle(snapshot.Category)),
             MonitorColumn.Delay => Cell(FormatDelay(snapshot)),
-            MonitorColumn.Loss => Cell(snapshot.LossText, LossStyle(snapshot.WindowLossRate)),
+            MonitorColumn.Loss => Cell(snapshot.LossText, LossStyle(snapshot.Statistics.WindowLossRate)),
             MonitorColumn.Log => Cell(snapshot.Warning is { Length: > 0 } warning
                 ? snapshot.WarningCount > 1 ? $"[{snapshot.WarningCount}] {warning}" : warning
                 : snapshot.LastEvent,
@@ -213,25 +220,28 @@ namespace Pings.Ui
         /// <summary>
         /// 延迟列文案：有抖动时才附上，避免出现 “0ms -” 这种占位（多一个空格就多一次折行机会）。
         /// </summary>
-        private static string FormatDelay(IcmpTaskSnapshot snapshot)
+        private static string FormatDelay(ProbeTaskSnapshot snapshot)
         {
             if (!snapshot.IsSuccess)
                 return "-";
 
-            return snapshot.JitterMs > 0
+            return snapshot.Statistics.JitterMs is not null
                 ? $"{snapshot.DelayText} {snapshot.JitterText}"
                 : snapshot.DelayText;
         }
 
         private static readonly Style WarningStyle = new(Color.Yellow, Color.Red, Decoration.Bold);
 
-        private static Style StatusStyle(IcmpFaultCategory category) => category switch
+        private static Style StatusStyle(ProbeFaultCategory category) => category switch
         {
-            IcmpFaultCategory.None => new Style(Color.Green),
-            IcmpFaultCategory.ConnectivityLoss => new Style(Color.Red, decoration: Decoration.Bold),
-            IcmpFaultCategory.AccessDenied => new Style(Color.Yellow),
-            IcmpFaultCategory.Unknown => new Style(Color.Grey),
-            _ => new Style(Color.Orange1)
+            ProbeFaultCategory.None => new Style(Color.Green),
+            ProbeFaultCategory.NoResponse => new Style(Color.Red, decoration: Decoration.Bold),
+            ProbeFaultCategory.Unreachable => new Style(Color.Red),
+            ProbeFaultCategory.ServiceUnavailable => new Style(Color.Orange1),
+            ProbeFaultCategory.NameResolution => new Style(Color.Yellow),
+            ProbeFaultCategory.ProtocolError => new Style(Color.Orange1),
+            ProbeFaultCategory.LocalResource => new Style(Color.Grey),
+            _ => new Style(Color.Grey)
         };
 
         private static Style LossStyle(double rate) => rate switch

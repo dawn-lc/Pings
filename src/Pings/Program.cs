@@ -53,7 +53,12 @@ namespace Pings
                 EnsureConfigExists(configPath);
 
                 AppConfig config = ConfigLoader.LoadConfig(configPath);
-                ConfigValidationResult validation = ConfigValidator.Validate(config);
+
+                // 相对路径（日志文件、UDP 负载文件）都与配置文件同目录，
+                // 避免「双击启动后工作目录变了，文件却找不到」。
+                string configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? Directory.GetCurrentDirectory();
+
+                ConfigValidationResult validation = ConfigValidator.Validate(config, configDirectory);
 
                 if (!validation.IsValid)
                 {
@@ -65,12 +70,8 @@ namespace Pings
                 foreach (string warning in validation.Warnings)
                     Console.WriteLine($"! {warning}");
 
-                // 相对路径的日志文件应与配置文件同目录，避免“双击启动后日志写到别处”。
                 if (!Path.IsPathRooted(config.Logging.LogFilePath))
-                {
-                    string configDirectory = Path.GetDirectoryName(configPath) ?? Directory.GetCurrentDirectory();
                     config.Logging.LogFilePath = Path.Combine(configDirectory, config.Logging.LogFilePath);
-                }
 
                 _logging = new Logging(config.Logging);
                 _logging.Log($"{AppInfo.VersionText} 开始运行 (配置文件: {configPath})");
@@ -82,9 +83,9 @@ namespace Pings
                 using IDisposable shutdown = RegisterShutdownHandlers(cts);
 
                 using NotificationService? notifier = CreateNotifier(config.Notifications);
-                await using IcmpMonitor monitor = new(_logging, notifier, config.Global);
-                foreach (IcmpTaskConfigJson task in config.Tasks)
-                    monitor.Add(IcmpTaskOptions.FromJson(task));
+                await using ProbeMonitor monitor = new(_logging, notifier, config.Global);
+                foreach (ProbeTaskConfigJson task in config.Tasks)
+                    monitor.Add(ProbeTaskOptions.FromJson(task, configDirectory));
 
                 return options.Once
                     ? await RunOnceAsync(monitor, cts.Token).ConfigureAwait(false)
@@ -107,19 +108,19 @@ namespace Pings
         }
 
         /// <summary>--once：每个目标探测一次，输出静态表格后退出。</summary>
-        private static async Task<int> RunOnceAsync(IcmpMonitor monitor, CancellationToken token)
+        private static async Task<int> RunOnceAsync(ProbeMonitor monitor, CancellationToken token)
         {
             await monitor.ProbeAllOnceAsync(token).ConfigureAwait(false);
 
             MonitorView view = new(monitor, TimeSpan.FromSeconds(1));
             view.RenderOnce();
 
-            bool anyUnreachable = monitor.Snapshots().Any(snapshot => snapshot.Category != IcmpFaultCategory.None);
+            bool anyUnreachable = monitor.Snapshots().Any(snapshot => snapshot.Category != ProbeFaultCategory.None);
             return anyUnreachable ? ExitCodes.Unreachable : ExitCodes.Success;
         }
 
         /// <summary>实时模式：后台任务持续探测，前台循环负责渲染与按键。</summary>
-        private static async Task<int> RunLiveAsync(IcmpMonitor monitor, GlobalConfig global, CancellationTokenSource cts)
+        private static async Task<int> RunLiveAsync(ProbeMonitor monitor, GlobalConfig global, CancellationTokenSource cts)
         {
             TimeSpan refreshInterval = TimeSpan.FromMilliseconds(Math.Clamp(global.UiRefreshInterval, 200, 60_000));
             MonitorView view = new(monitor, refreshInterval, CreateTerminalPreparation());
@@ -162,7 +163,7 @@ namespace Pings
         /// 处理 C/Q 快捷键与定时自动确认。
         /// 输入被重定向（服务/管道运行）时不做任何按键读取，只等待取消。
         /// </summary>
-        private static async Task HandleConsoleKeysAsync(IcmpMonitor monitor, GlobalConfig global, CancellationTokenSource cts)
+        private static async Task HandleConsoleKeysAsync(ProbeMonitor monitor, GlobalConfig global, CancellationTokenSource cts)
         {
             CancellationToken token = cts.Token;
 

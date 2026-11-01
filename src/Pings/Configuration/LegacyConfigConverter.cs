@@ -27,10 +27,10 @@ namespace Pings.Configuration
                 if (parts.Length < 2)
                     throw new InvalidOperationException($"无法解析的配置行: {line}");
 
-                config.Tasks.Add(new IcmpTaskConfigJson
+                config.Tasks.Add(new ProbeTaskConfigJson
                 {
                     Name = parts[0],
-                    IP = parts[1],
+                    Target = parts[1],
                     Timeout = ParseInt(parts, 2, 1000),
                     MaxRecentPackets = ParseInt(parts, 3, 255),
                     SignificantDelayThreshold = ParseInt(parts, 4, 20),

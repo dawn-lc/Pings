@@ -18,7 +18,7 @@ namespace Pings.Configuration
     /// </summary>
     public static class ConfigValidator
     {
-        public static ConfigValidationResult Validate(AppConfig? config)
+        public static ConfigValidationResult Validate(AppConfig? config, string? baseDirectory = null)
         {
             List<string> errors = [];
             List<string> warnings = [];
@@ -29,7 +29,7 @@ namespace Pings.Configuration
                 return new ConfigValidationResult(errors, warnings);
             }
 
-            ValidateTasks(config.Tasks, errors, warnings);
+            ValidateTasks(config.Tasks, baseDirectory, errors, warnings);
             ValidateGlobal(config.Global, errors, warnings);
             ValidateLogging(config.Logging, errors, warnings);
             ValidateNotifications(config.Notifications, errors, warnings);
@@ -37,7 +37,11 @@ namespace Pings.Configuration
             return new ConfigValidationResult(errors, warnings);
         }
 
-        private static void ValidateTasks(List<IcmpTaskConfigJson>? tasks, List<string> errors, List<string> warnings)
+        private static void ValidateTasks(
+            List<ProbeTaskConfigJson>? tasks,
+            string? baseDirectory,
+            List<string> errors,
+            List<string> warnings)
         {
             if (tasks is null || tasks.Count == 0)
             {
@@ -46,32 +50,41 @@ namespace Pings.Configuration
             }
 
             HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> targets = new(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> endpoints = new(StringComparer.OrdinalIgnoreCase);
 
             for (int i = 0; i < tasks.Count; i++)
             {
-                IcmpTaskConfigJson task = tasks[i];
+                ProbeTaskConfigJson task = tasks[i];
                 string label = string.IsNullOrWhiteSpace(task.Name) ? $"tasks[{i}]" : task.Name;
 
                 if (string.IsNullOrWhiteSpace(task.Name))
                     errors.Add($"{label}: 任务名称不能为空");
-
-                if (string.IsNullOrWhiteSpace(task.IP))
-                    errors.Add($"{label}: 目标地址不能为空");
-                else if (!IcmpTaskOptions.IsValidTarget(task.IP.Trim()))
-                    errors.Add($"{label}: 目标地址 \"{task.IP}\" 不是有效的 IP 或域名");
-
-                if (!names.Add(task.Name.Trim()))
+                else if (!names.Add(task.Name.Trim()))
                     warnings.Add($"{label}: 任务名称重复，实时表格将无法区分");
 
-                if (!targets.Add(task.IP.Trim()))
-                    warnings.Add($"{label}: 目标地址重复，会重复探测同一主机");
+                bool protocolValid = ProbeProtocolExtensions.TryParseProtocol(task.Protocol, out ProbeProtocol protocol);
+
+                if (!protocolValid)
+                    errors.Add($"{label}: protocol \"{task.Protocol}\" 无效，可选 icmp / tcp / udp / http");
+
+                bool targetValid = ValidateTarget(task, protocolValid ? protocol : ProbeProtocol.Icmp, label, errors);
+
+                if (protocolValid)
+                    ValidateProtocolFields(task, protocol, baseDirectory, label, errors, warnings);
+
+                if (protocolValid && targetValid
+                    && !endpoints.Add(ProbeTaskOptions.BuildEndpoint(protocol, task.Target.Trim(), task.Port ?? 0)))
+                {
+                    warnings.Add($"{label}: 目标重复，会重复探测同一端点");
+                }
 
                 if (task.Timeout is < 1 or > 60_000)
                     errors.Add($"{label}: timeout 必须在 1~60000 毫秒之间");
 
                 if (task.Interval is < 0 or > 60_000)
                     errors.Add($"{label}: interval 必须在 0~60000 毫秒之间（0 表示与 timeout 相同）");
+                else if (task.Interval > 0 && task.Interval < task.Timeout)
+                    warnings.Add($"{label}: interval 小于 timeout，实际探测间隔会被探测耗时撑长");
 
                 if (task.MaxRecentPackets is < 1 or > 100_000)
                     errors.Add($"{label}: maxRecentPackets 必须在 1~100000 之间");
@@ -85,8 +98,96 @@ namespace Pings.Configuration
                 if (task.PacketLossCount is < 0 or > 1_000_000)
                     errors.Add($"{label}: packetLossCount 必须为非负整数");
 
+                if (task.LossFlapWindowSeconds is < 0 or > 86_400)
+                    errors.Add($"{label}: lossFlapWindowSeconds 必须在 0~86400 秒之间");
+
+                if (task.LossFlapCount is < 0 or > 1_000_000)
+                    errors.Add($"{label}: lossFlapCount 必须为非负整数");
+
                 if (task.PacketLossDuration == 0 && task.PacketLossCount == 0)
-                    warnings.Add($"{label}: 丢包持续时长与丢包次数阈值均为 0，不会触发丢包告警");
+                    warnings.Add($"{label}: 丢包持续时长与丢包次数阈值均为 0，不会触发中断告警");
+            }
+        }
+
+        private static bool ValidateTarget(ProbeTaskConfigJson task, ProbeProtocol protocol, string label, List<string> errors)
+        {
+            if (string.IsNullOrWhiteSpace(task.Target))
+            {
+                errors.Add($"{label}: 目标地址不能为空");
+                return false;
+            }
+
+            string target = task.Target.Trim();
+
+            if (protocol == ProbeProtocol.Http)
+            {
+                if (!ProbeTaskOptions.IsValidHttpUrl(target))
+                {
+                    errors.Add($"{label}: target \"{target}\" 不是有效的 http/https 地址");
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (!ProbeTaskOptions.IsValidHost(target))
+            {
+                errors.Add($"{label}: 目标地址 \"{target}\" 不是有效的 IP 或域名");
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void ValidateProtocolFields(
+            ProbeTaskConfigJson task,
+            ProbeProtocol protocol,
+            string? baseDirectory,
+            string label,
+            List<string> errors,
+            List<string> warnings)
+        {
+            if (protocol.RequiresPort())
+            {
+                if (task.Port is not (>= 1 and <= 65_535))
+                    errors.Add($"{label}: {protocol.ToConfigString()} 需要 1~65535 的端口 (port)");
+            }
+            else if (task.Port is not null)
+            {
+                warnings.Add($"{label}: {protocol.ToConfigString()} 不使用 port，该字段被忽略");
+            }
+
+            switch (protocol)
+            {
+                case ProbeProtocol.Icmp:
+                    if (task.PayloadSize is < 0 or > 65_500)
+                        errors.Add($"{label}: payloadSize 必须在 0~65500 之间");
+                    break;
+
+                case ProbeProtocol.Udp:
+                    // 三种来源（文本 / base64: / file:）共用同一套解析逻辑：
+                    // 校验与运行期不可能出现「启动说可以、跑起来却不行」的偏差。
+                    if (!UdpPayloadResolver.TryValidate(task.UdpPayload, baseDirectory, out string? payloadError))
+                        errors.Add($"{label}: {payloadError}");
+                    break;
+
+                case ProbeProtocol.Http:
+                    if (task.HttpMethod is not null)
+                    {
+                        string method = task.HttpMethod.Trim().ToUpperInvariant();
+                        if (method is not ("HEAD" or "GET"))
+                            errors.Add($"{label}: httpMethod 只允许 HEAD 或 GET");
+                    }
+
+                    if (task.ExpectedStatus is not null)
+                    {
+                        foreach (int code in task.ExpectedStatus)
+                        {
+                            if (code is < 100 or > 599)
+                                errors.Add($"{label}: expectedStatus 包含非法状态码 {code}（100~599）");
+                        }
+                    }
+                    break;
             }
         }
 

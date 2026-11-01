@@ -17,9 +17,9 @@ public sealed class LegacyConfigConverterTests : IDisposable
 
         AppConfig config = LegacyConfigConverter.Convert(path);
 
-        IcmpTaskConfigJson task = Assert.Single(config.Tasks);
+        ProbeTaskConfigJson task = Assert.Single(config.Tasks);
         Assert.Equal("gateway", task.Name);
-        Assert.Equal("192.168.1.1", task.IP);
+        Assert.Equal("192.168.1.1", task.Target);
         Assert.Equal(2000, task.Timeout);
         Assert.Equal(150, task.MaxRecentPackets);
         Assert.Equal(25, task.SignificantDelayThreshold);
@@ -33,7 +33,7 @@ public sealed class LegacyConfigConverterTests : IDisposable
         string path = Path.Combine(_directory, "config.txt");
         File.WriteAllText(path, "dns 8.8.8.8");
 
-        IcmpTaskConfigJson task = Assert.Single(LegacyConfigConverter.Convert(path).Tasks);
+        ProbeTaskConfigJson task = Assert.Single(LegacyConfigConverter.Convert(path).Tasks);
 
         Assert.Equal(1000, task.Timeout);
         Assert.Equal(255, task.MaxRecentPackets);

@@ -9,7 +9,7 @@ namespace Pings.Configuration
     {
         /// <summary>监控任务列表。</summary>
         [JsonPropertyName("tasks")]
-        public List<IcmpTaskConfigJson> Tasks { get; set; } = [];
+        public List<ProbeTaskConfigJson> Tasks { get; set; } = [];
 
         /// <summary>全局行为配置。</summary>
         [JsonPropertyName("global")]
@@ -27,23 +27,35 @@ namespace Pings.Configuration
     /// <summary>
     /// 单个监控任务的 JSON 配置。
     /// </summary>
-    public sealed class IcmpTaskConfigJson
+    public sealed class ProbeTaskConfigJson
     {
         /// <summary>任务名称（界面显示名）。</summary>
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 
-        /// <summary>目标 IP 地址或域名。</summary>
-        [JsonPropertyName("ip")]
-        public string IP { get; set; } = string.Empty;
+        /// <summary>探测协议：icmp / tcp / udp / http，默认 icmp。</summary>
+        [JsonPropertyName("protocol")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Protocol { get; set; }
 
-        /// <summary>单次 Ping 超时时间（毫秒），默认 1000。</summary>
+        /// <summary>
+        /// 目标：icmp / tcp / udp 为主机名或 IP；http 为完整 URL。必填。
+        /// </summary>
+        [JsonPropertyName("target")]
+        public string Target { get; set; } = string.Empty;
+
+        /// <summary>端口，tcp / udp 必填。</summary>
+        [JsonPropertyName("port")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? Port { get; set; }
+
+        /// <summary>单次探测超时时间（毫秒），默认 1000。</summary>
         [JsonPropertyName("timeout")]
         public int Timeout { get; set; } = 1000;
 
         /// <summary>探测间隔（毫秒），0 表示与 <see cref="Timeout"/> 相同。</summary>
         [JsonPropertyName("interval")]
-        public int Interval { get; set; } = 0;
+        public int Interval { get; set; }
 
         /// <summary>参与丢包率与延迟统计的样本数（滑动窗口），默认 255。</summary>
         [JsonPropertyName("maxRecentPackets")]
@@ -53,13 +65,56 @@ namespace Pings.Configuration
         [JsonPropertyName("significantDelayThreshold")]
         public int SignificantDelayThreshold { get; set; } = 20;
 
-        /// <summary>连续丢包持续时间阈值（秒），0 表示不按时长判定，默认 30。</summary>
+        /// <summary>连续无响应持续时间阈值（秒），0 表示不按时长判定，默认 30。</summary>
         [JsonPropertyName("packetLossDuration")]
         public double PacketLossDuration { get; set; } = 30.0;
 
-        /// <summary>连续丢包次数阈值，0 表示不按次数判定，默认 5。</summary>
+        /// <summary>连续无响应次数阈值，0 表示不按次数判定，默认 5。</summary>
         [JsonPropertyName("packetLossCount")]
         public int PacketLossCount { get; set; } = 5;
+
+        /// <summary>短故障统计窗口（秒），0 表示关闭抖动链路检测，默认 300。</summary>
+        [JsonPropertyName("lossFlapWindowSeconds")]
+        public double LossFlapWindowSeconds { get; set; } = 300;
+
+        /// <summary>窗口内短故障达到多少次判定为抖动链路，默认 3。</summary>
+        [JsonPropertyName("lossFlapCount")]
+        public int LossFlapCount { get; set; } = 3;
+
+        /// <summary>ICMP 负载字节数，默认 32。</summary>
+        [JsonPropertyName("payloadSize")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? PayloadSize { get; set; }
+
+        /// <summary>UDP 探测负载文本，默认 "Pings"。</summary>
+        [JsonPropertyName("udpPayload")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? UdpPayload { get; set; }
+
+        /// <summary>HTTP 请求方法，仅 HEAD / GET，默认 HEAD。</summary>
+        [JsonPropertyName("httpMethod")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? HttpMethod { get; set; }
+
+        /// <summary>HTTP 期望状态码，空表示 200~399。</summary>
+        [JsonPropertyName("expectedStatus")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<int>? ExpectedStatus { get; set; }
+
+        /// <summary>HTTP 是否跟随重定向，默认 false。</summary>
+        [JsonPropertyName("followRedirects")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool FollowRedirects { get; set; }
+
+        /// <summary>HTTP 是否复用连接池，默认 false（每轮新建连接，RTT 可比）。</summary>
+        [JsonPropertyName("reuseConnection")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ReuseConnection { get; set; }
+
+        /// <summary>HTTP 是否使用系统代理，默认 false。</summary>
+        [JsonPropertyName("useProxy")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool UseProxy { get; set; }
     }
 
     /// <summary>

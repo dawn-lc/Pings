@@ -138,10 +138,17 @@
         <UpxAutoDownload Condition="'$(UpxAutoDownload)' == ''">true</UpxAutoDownload>
         <UpxForceUpdate Condition="'$(UpxForceUpdate)' == ''">false</UpxForceUpdate>
         <_UpxToolDir>$(RepoRoot)\tools\upx\</_UpxToolDir>
-
-        <!-- 自动下载只提供 win64 发行包；其它平台请用 -p:UpxPath 或 PATH 里的 upx。 -->
-        <_UpxTargetIsWindows Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win'))">true</_UpxTargetIsWindows>
     </PropertyGroup>
+
+    <!--
+      **「目标是不是 Windows」不能缓存成顶层属性**：发布配置（pubxml）在本文件之后才 import，
+      RuntimeIdentifier=win-x64 到那时才生效，而顶层属性的求值早于它 —— 读到的永远是空值，
+      UPX 的 target 因条件不成立被静默跳过（产物保持 9 MB 未压缩，日志里一句提示都没有）。
+      因此判断写成 target 执行期的内联表达式：$(RuntimeIdentifier) 在 target 运行时
+      已包含 pubxml 设置的值。
+
+      自动下载只提供 win64 发行包；其它平台请用 -p:UpxPath 或 PATH 里的 upx。
+    -->
 
     <UsingTask TaskName="EnsureUpxToolTask" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
         <ParameterGroup>
@@ -159,7 +166,7 @@
         </Task>
     </UsingTask>
 
-    <Target Name="EnsureUpxTool" Condition="'$(PublishAot)' == 'true' and '$(EnableUpx)' == 'true' and '$(_UpxTargetIsWindows)' == 'true'">
+    <Target Name="EnsureUpxTool" Condition="'$(PublishAot)' == 'true' and '$(EnableUpx)' == 'true' and $(RuntimeIdentifier.StartsWith('win'))">
         <EnsureUpxToolTask ExplicitPath="$(UpxPath)" ToolDirectory="$(_UpxToolDir)" RequestedVersion="$(UpxVersion)" AutoDownload="$(UpxAutoDownload)" ForceUpdate="$(UpxForceUpdate)">
             <Output TaskParameter="ResultPath" PropertyName="_UpxToolPath" />
             <Output TaskParameter="ResolvedVersion" PropertyName="_UpxResolvedVersion" />
@@ -174,7 +181,7 @@
       "使用指定的 UPX"，产物却仍是未压缩体积）。
       因此这里只在 Condition 里判断「该不该尝试」，路径是否拿到放在 task 级 Condition 上。
     -->
-    <Target Name="UpxCompressNativeBinary" AfterTargets="CopyNativeBinary" DependsOnTargets="EnsureUpxTool" Condition="'$(PublishAot)' == 'true' and '$(EnableUpx)' == 'true' and '$(_UpxTargetIsWindows)' == 'true'">
+    <Target Name="UpxCompressNativeBinary" AfterTargets="CopyNativeBinary" DependsOnTargets="EnsureUpxTool" Condition="'$(PublishAot)' == 'true' and '$(EnableUpx)' == 'true' and $(RuntimeIdentifier.StartsWith('win'))">
         <PropertyGroup>
             <_UpxBinary>$(PublishDir)$(TargetName)$(NativeBinaryExt)</_UpxBinary>
         </PropertyGroup>

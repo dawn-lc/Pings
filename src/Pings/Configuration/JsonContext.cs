@@ -9,8 +9,8 @@ namespace Pings.Configuration
     /// </summary>
     [JsonSourceGenerationOptions(WriteIndented = true)]
     [JsonSerializable(typeof(AppConfig))]
-    [JsonSerializable(typeof(List<IcmpTaskConfigJson>))]
-    [JsonSerializable(typeof(IcmpTaskConfigJson))]
+    [JsonSerializable(typeof(List<ProbeTaskConfigJson>))]
+    [JsonSerializable(typeof(ProbeTaskConfigJson))]
     [JsonSerializable(typeof(GlobalConfig))]
     [JsonSerializable(typeof(LoggingConfig))]
     [JsonSerializable(typeof(NotificationsConfig))]
