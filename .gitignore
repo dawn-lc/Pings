@@ -182,13 +182,8 @@ publish/
 # Publish Web Output
 *.[Pp]ublish.xml
 *.azurePubxml
-# Note: Comment the next line if you want to checkin your web deploy settings,
-# but database connection strings (with potential passwords) will be unencrypted
+# 发布配置不入库：本项目不用 pubxml，发布平台由 -r 指定（见 Pings.csproj 的 RID → TFM 推导）。
 *.pubxml
-# 例外：发布配置是本项目的构建资产（Native AOT 的唯一发布形态），必须入库。
-# 没有它，Release 工作流的 -p:PublishProfile 会直接找不到文件。
-# 用 ** 而不是写死 Properties/...：项目位于 src/Pings/ 下，锚定根目录的模式匹配不到。
-!**/Properties/PublishProfiles/*.pubxml
 *.publishproj
 
 # Microsoft Azure Web App publish settings. Comment the next line if you want to

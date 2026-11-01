@@ -151,6 +151,42 @@ public static class BuildTaskHelpers
     /// <summary>给路径加引号（内联任务没有 ProcessStartInfo.ArgumentList，只能手工拼）</summary>
     public static string Quote(string value) => "\"" + value + "\"";
 
+    /// <summary>
+    /// 宿主是否为 Windows。用目录分隔符判断而不用 <c>RuntimeInformation</c>：RoslynCodeTaskFactory 的参考集较旧，
+    /// 少一个 API 依赖就少一处跨 SDK 版本的风险。
+    /// </summary>
+    public static bool HostIsWindows => Path.DirectorySeparatorChar == '\\';
+
+    /// <summary>在 PATH 里找可执行文件；找不到返回 null。</summary>
+    public static string FindOnPath(string fileName)
+    {
+        string path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(path))
+            return null;
+
+        foreach (string entry in path.Split(Path.PathSeparator))
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+                continue;
+
+            string candidate;
+            try
+            {
+                candidate = Path.GetFullPath(Path.Combine(entry.Trim(), fileName));
+            }
+            catch
+            {
+                // PATH 里的无效项直接跳过，不该让构建失败
+                continue;
+            }
+
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
+    }
+
     /// <summary>从 zip 中解出指定文件名的条目；找不到返回 false</summary>
     public static bool TryExtractFromZip(byte[] zipBytes, string fileName, string destination)
     {
@@ -168,10 +204,14 @@ public static class BuildTaskHelpers
 }
 
 /// <summary>
-/// 解析 upx：显式路径 → 约定位置缓存（tools/upx/）→ 自动下载最新 win64 版。
+/// 解析 upx：显式路径 → 约定位置缓存（tools/upx/）→ PATH（仅非 Windows 宿主）→ 自动下载最新 win64 版。
 /// <para>
 /// 与「图标」那种必需件不同，<b>找不到 UPX 不算构建失败</b>：它只影响产物体积，
 /// 没有它程序照样能跑。因此所有失败路径都返回 true 并只发 warning。
+/// </para>
+/// <para>
+/// 自动下载只在 Windows 宿主上做：官方只提供 win64 的 zip，Linux / macOS 是 tar.bz2，
+/// .NET 没有内置 bz2 解压，为它引入外部 tar 依赖不划算 —— 这两个平台用包管理器装一行就够。
 /// </para>
 /// </summary>
 public class EnsureUpxToolTask : Task
@@ -222,7 +262,7 @@ public class EnsureUpxToolTask : Task
             return false;
         }
 
-        string cachedExe = Path.Combine(ToolDirectory, "upx.exe");
+        string cachedExe = Path.Combine(ToolDirectory, BuildTaskHelpers.HostIsWindows ? "upx.exe" : "upx");
         string versionFile = Path.Combine(ToolDirectory, ".version");
         string cachedVersion = BuildTaskHelpers.ReadVersionMarker(versionFile);
         bool wantPinned = BuildTaskHelpers.IsPinned(RequestedVersion, out string pinned);
@@ -230,7 +270,12 @@ public class EnsureUpxToolTask : Task
         // 2) 缓存命中（跟随最新时视缓存为最新；固定版本时须一致）
         if (!ForceUpdate && File.Exists(cachedExe))
         {
-            if (!wantPinned || string.Equals(cachedVersion, pinned, StringComparison.OrdinalIgnoreCase))
+            // 非 Windows 宿主的缓存无法自愈（不做自动下载），没有版本标记时按可用处理：
+            // 否则「手工放入 tools/upx/upx」这种最自然的做法会被判成版本不符而静默跳过压缩。
+            bool unverifiable = cachedVersion is null && !BuildTaskHelpers.HostIsWindows;
+
+            if (!wantPinned || unverifiable
+                || string.Equals(cachedVersion, pinned, StringComparison.OrdinalIgnoreCase))
             {
                 ResultPath = cachedExe;
                 ResolvedVersion = cachedVersion;
@@ -245,7 +290,25 @@ public class EnsureUpxToolTask : Task
 
         if (!AutoDownload)
         {
-            Log.LogWarning("未找到 upx.exe 且已禁用自动下载（UpxAutoDownload=false），跳过压缩。");
+            Log.LogWarning("未找到 UPX 且已禁用自动下载（UpxAutoDownload=false），跳过压缩。");
+            return true;
+        }
+
+        // 非 Windows 宿主不做自动下载（官方包是 tar.bz2，解压要外部 tar）：
+        // 包管理器装上就够，找到即用。
+        if (!BuildTaskHelpers.HostIsWindows)
+        {
+            string onPath = BuildTaskHelpers.FindOnPath("upx");
+
+            if (!string.IsNullOrEmpty(onPath))
+            {
+                ResultPath = onPath;
+                Log.LogMessage(MessageImportance.High, "使用 PATH 中的 UPX：" + onPath);
+                return true;
+            }
+
+            Log.LogWarning("未找到 UPX，跳过压缩。安装（apt install upx-ucl / brew install upx）"
+                + " 或把可执行文件放到 tools/upx/upx，也可用 -p:UpxPath=... 显式指定。");
             return true;
         }
 

@@ -48,7 +48,11 @@ Pings/
 │  │  └─ MonitorLayout.cs       列/行自适应决策（纯函数，便于测试）
 │  ├─ Interop/
 │  │  └─ WindowsConsole.cs      Windows 控制台 P/Invoke（仅 WINDOWS 目标编译）
-│  └─ Properties/PublishProfiles/   Native AOT 发布配置
+│  └─ Properties/
+│     ├─ EmbeddedResourceManager.cs  多语言资源装载（语言后缀无 .Culture 段）
+│     ├─ Resources.resx              中性资源（英文）
+│     ├─ ResourcesZhCn.resx          简体中文
+│     └─ Resources.Designer.cs       手写强类型访问器
 ├─ tests/Pings.Tests/           xUnit 测试（不参与发布）
 ├─ build/
 │  └─ BuildTasks.cs             构建期 MSBuild 内联任务（自动获取 UPX）
@@ -209,10 +213,12 @@ Spectre 的 `Overflow.Ellipsis` 只截断“超长单词”，遇到空格仍会
 唯一真相源是 **git tag**，源码里不存在版本常量：
 
 ```
-tag v1.0.22        → AppVersion=1.0.22  AppVersionType=Release  → --version: Pings 1.0.22
-tag 1.1.0-Beta     → AppVersion=1.1.0   AppVersionType=Beta     → --version: Pings 1.1.0-Beta
+tag v1.2.3        → AppVersion=1.2.3   AppVersionType=Release  → --version: Pings 1.2.3
+tag v1.2.3-Beta   → AppVersion=1.2.3   AppVersionType=Beta     → --version: Pings 1.2.3-Beta
 本地构建             → AppVersion=0.0.0   AppVersionType=Dev      → --version: Pings 0.0.0-Dev
 ```
+
+`v` 前缀可省略（`Release.yml` 的 tags 过滤同时匹配 `v[0-9]*` 与 `[0-9]*`），但不带前缀的 tag 容易与普通分支名混淆，建议始终带 `v`。没带类型后缀即视为 `Release`。
 
 链路：工作流解析 tag → `-p:AppVersion` / `-p:AppVersionType` → csproj 写入
 `AssemblyMetadata` → `AppInfo` 反射读回。
@@ -341,28 +347,82 @@ dotnet build Pings.sln -c Release
 dotnet test tests/Pings.Tests/Pings.Tests.csproj -c Release
 ```
 
-### Windows Native AOT
+### 发布模型：平台/架构与变体都是参数
+
+仓库里**没有**任何按平台区分的发布配置文件，也没有发布脚本。发布会话只由两个参数决定：
+
+| 参数 | 取值 | 省略时 |
+|------|------|--------|
+| `-r`（RID） | `win-x64` / `win-arm64` / `linux-x64` / `linux-arm64` / `osx-x64` / `osx-arm64` … | 取 SDK 的 `NETCoreSdkRuntimeIdentifier`，即**当前机器** |
+| `-p:PublishVariant` | `net` / `aot` | 有 RID 时按 `aot` |
 
 ```powershell
-dotnet publish src/Pings/Pings.csproj -c Release -f net10.0-windows `
-  -p:PublishProfile=src/Pings/Properties/PublishProfiles/win-x64-aot.pubxml `
-  -p:AppVersion=1.0.22 -p:AppVersionType=Release -o dist/aot
+# 发当前环境（当前系统 + 当前架构），两个变体各一条命令
+dotnet publish src\Pings\Pings.csproj -c Release -p:PublishVariant=net -o dist\net
+dotnet publish src\Pings\Pings.csproj -c Release -p:PublishVariant=aot -o dist\aot
+
+# 发别的平台架构：只多一个 -r
+dotnet publish src\Pings\Pings.csproj -c Release -r linux-arm64 -p:PublishVariant=net -o dist\linux-arm64-net
 ```
 
-`-f` 不能省：本项目是多目标框架，pubxml 里的 `TargetFramework` 在跨目标求值阶段不生效
-（会报 `NETSDK1129`）。
+| 变体 | 实际开关 | `win-x64` 实测 |
+|------|----------|----------------|
+| `net` | `SelfContained` + `PublishSingleFile` + `EnableCompressionInSingleFile`，`PublishAot=false` | 12.07 MB |
+| `aot` | `PublishAot=true`（AOT 本身就是单个原生二进制，不碰单文件开关） | 9.23 MB → UPX 后 3.88 MB |
 
-构建链全部由 MSBuild 承担，仓库里没有发布脚本：工具获取（UPX）、压缩、产物形态自检
-都是 csproj 里的 target，因此**本地与 CI 跑的是同一份逻辑**，不存在「脚本里做的检查 CI 没做」。
+**为什么用参数而不是 pubxml**：pubxml 是在「TFM 已选定」之后才被导入的，反过来逼着命令行再写一遍 `-f`，还得为每个平台各存一份内容几乎相同的副本——`-r` 是命令行全局属性，求值阶段就可见，一个参数就够，也不存在「改了 csproj 忘了改 profile」的第二份真相源。
 
-**Windows AOT 必须在 Windows 上构建**：`Microsoft.NETCore.Native.Publish.targets` 有硬性检查
-`Cross-OS native compilation is not supported`，且非 Windows 环境没有 MSVC 链接器与
-Windows SDK 导入库（`kernel32.lib` 等）。所以：本地在 Windows 上执行上面的命令，
-CI 用 `windows-latest`。非 Windows 平台可以发布自己的 AOT（`-r linux-x64`），UPX 会自动跳过。
+**TFM 由 RID 推导**，写在 csproj 顶部：
 
-发布由 tag 驱动（`Release.yml`）：tag 解析出「版本 + 类型」→ 校验格式 → 跑测试 →
-AOT 发布（注入 `AppVersion` / `AppVersionType`）→ 断言单 exe / 无 pdb / 体积 / 版本号 →
-回环冒烟 → 创建 Release。
+```xml
+<PublishVariant Condition="'$(PublishVariant)' == '' and '$(RuntimeIdentifier)' != ''">aot</PublishVariant>
+<RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(PublishVariant)' != ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
+<_IsWindowsRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier.StartsWith('win'))</_IsWindowsRid>
+<TargetFrameworks Condition="'$(RuntimeIdentifier)' == ''">net10.0;net10.0-windows</TargetFrameworks>
+<TargetFramework Condition="'$(_IsWindowsRid)' == 'true'">net10.0-windows</TargetFramework>
+```
+
+四条约束，改动这里时必须一起守住：
+
+1. **属性函数带字符串参数不能直接写进 `Condition`**。`$(RuntimeIdentifier.StartsWith('win'))` 里单引号会被条件解析器吃掉，报 `MSB4092`；必须先算成 `_IsWindowsRid` 再比较。
+2. **必须设置单数 `<TargetFramework>`**。只留 `<TargetFrameworks>`（复数）会让 SDK 进入跨目标模式，`publish` 直接报 `NETSDK1129`。
+3. **`<PropertyGroup>` 不能嵌套**。变体差异块是另一个顶层 `PropertyGroup`，塞进上面那个里会静默失效（实测踩过：`-p:PublishVariant=net` 仍然产出 3.88 MB 的 AOT 产物）。
+4. **UPX 的「目标是不是 Windows」不能缓存成顶层属性**。不带 `-r` 时 `RuntimeIdentifier` 为空，缓存进属性会让条件永久不成立。判断要写成 target 执行期的内联表达式 `$(RuntimeIdentifier.StartsWith('win'))`，运行到那一刻读到的才是本次发布实际使用的值。
+
+`AppVersion` / `AppVersionType` 默认 `0.0.0` / `Dev`：**版本号唯一真相源是 git tag**，本地构建不需要手工声明。演练发布包时用 `-p:AppVersion=9.9.9 -p:AppVersionType=Release`，此时 `--version` 输出 `Pings 9.9.9`，与正式包格式完全一致。
+
+构建链全部由 MSBuild 承担：工具获取（UPX）、压缩、产物形态自检都是 csproj 里的 target，因此**本地与 CI 跑的是同一份逻辑**，不存在「脚本里做的检查 CI 没做」。
+
+### AOT 不能跨操作系统
+
+`Microsoft.NETCore.Native.Publish.targets` 有硬性检查 `Cross-OS native compilation is not supported`；即便绕过，Linux 上也没有 MSVC 链接器与 Windows SDK 导入库（`kernel32.lib` 等），ILCompiler 仍产不出 PE。
+
+所以每种操作系统必须有**自己的 runner**：这正是 `.github/workflows/build-matrix.yml` 用 12 项矩阵（6 个 RID × 2 个变体）而不是单条命令打包全部的原因。`net` 变体不受此限制，可跨平台发布，但它和 `aot` 共用矩阵，保证同一 RID 的两个产物来自同一份源码、同一套版本号。
+
+注意这里限制的是**操作系统**，不是架构：同一操作系统内可以交叉构建另一种架构。`windows-latest`（Windows Server 2025）镜像自带 `VC.Tools.ARM64` 与 Windows SDK，所以 `win-arm64` 在 x64 runner 上能正常构建（本机没有 ARM64 C++ 工具链时会报 `Platform linker not found`，那是环境缺失，不是设计限制）。因此 Windows 只需要一个 runner 标签。
+
+### 工作流结构
+
+只有两个作业定义，CI 与 Release 共用：
+
+| 文件 | 角色 |
+|------|------|
+| `build-matrix.yml` | `workflow_call` 可复用工作流，**唯一**的「全平台 × 全变体」定义：发布 → 产物校验 → 回环冒烟 → 改名 → 上传 |
+| `CI.yml` | `verify`（编码 / RID→TFM 推导 / build / test，单个 runner）+ `artifacts`（调用 `build-matrix.yml`） |
+| `Release.yml` | `version`（解析 tag）+ `test` + `build`（调用 `build-matrix.yml`，传入版本号）+ `publish`（断言 12 个附件齐备 → 创建 Release） |
+
+矩阵项只有三列（`os` / `rid` / `variant`），因为 TFM 与产物名都由 RID 推出来，没有第二条需要维护的信息。实际用到的 runner 只有 5 种：`windows-latest`、`ubuntu-latest`、`ubuntu-24.04-arm`、`macos-15-intel`、`macos-latest`。
+
+几条刻意的选择：
+
+- **`fail-fast: false`**：一个平台失败不该掩盖其它平台的结果，先看完所有失败再统一修。
+- **Windows 只用一个 runner 标签**：`windows-latest` 同时负责 `win-x64` 与 `win-arm64`（依靠镜像自带的 ARM64 C++ 工具链交叉构建）。少一种 runner 就少一处环境差异，代价是 ARM64 产物无法在 x64 runner 上执行，验证方式随之降级——见下一条。
+- **验证分两种，取决于能否执行**：目标架构与 `RUNNER_ARCH` 一致时，让产物自报 `--version` 并跑回环 `--once`；不一致时（目前只有 `win-arm64`）改为断言 PE 文件头 `Machine` 字段是 `0xAA64`。这条断言不是退而求其次的摆设：RID 没生效、错发了宿主架构二进制时，只有文件头能发现。「跳过」必须显式打印，静默跳过比失败更危险。
+- **测试不在矩阵里跑**：测试与平台无关，`verify` 跑一次就够；12 个矩阵项各跑一遍等于把同一批用例执行 12 次。平台相关的正确性由「能执行的跑起来 + 不能执行的验形态」共同覆盖。
+- **Release 不给 `workflow_dispatch` 入口**：手动入口只能跑默认分支的代码，而「发出去的产物必须来自被打 tag 的那个提交」不能妥协。失败后重跑同一次运行即可。
+- **`Verify asset set` 断言附件集合相等**（不只查缺，也查多）：少了说明某个矩阵项静默失败，多了说明命名规则走散。
+
+「单 exe / 无 pdb」不在工作流里断言，而由 `VerifyPublishOutput` 与 `CopyOutputSymbolsToPublishDirectory=false` 在构建期保证（两个变体都生效）——本地发布受同一约束，不存在「CI 查了、本地没查」的落差。体积也不设阈值（会随 .NET / ILCompiler 版本漂移），UPX 是否生效只看 `upx -l` 的退出码。
 
 ### 多协议与 AOT
 
@@ -371,7 +431,7 @@ AOT 发布（注入 `AppVersion` / `AppVersionType`）→ 断言单 exe / 无 pd
   `SocketsHttpConnectionContext`，不经过反射路径。
 - 新增配置类型必须在 `JsonContext` 登记（源生成）：漏登记时普通构建也能通过，
   但 AOT 产物会在反序列化时失败——这是本项目最容易踩的裁剪坑。
-- 冒烟覆盖范围：CI 只在 AOT 产物上跑回环 ICMP（不依赖外网、不需要起服务）；
+- 冒烟覆盖范围：CI 在**全部 12 个产物**上跑回环 ICMP（不依赖外网、不需要起服务）；
   TCP / UDP / HTTP 的具体行为由单元测试在本机回环端口上验证（见「测试」一节的表格）。
   发布前若改了传输层，建议手工跑一次 README 的「本地多协议冒烟」配置。
 - Linux / macOS 上 ICMP 需要 ICMP datagram 套接字权限（`net.ipv4.ping_group_range` 或 `CAP_NET_RAW`），
@@ -383,19 +443,31 @@ AOT 发布（注入 `AppVersion` / `AppVersionType`）→ 断言单 exe / 无 pd
 |------|------|
 | `CetCompat=false` | 不打 `/CETCOMPAT`。否则未打全累积更新的旧 Win10/11 会在托管 Main 之前 fail-fast（0x80131506），`try/catch` 捕不到 |
 | `CopyOutputSymbolsToPublishDirectory=false` | `DebugType`/`DebugSymbols` 管不到 ILCompiler 的原生符号，这个开关才决定发布目录里有没有几十 MB 的 `.pdb` |
-| `PublishSingleFile=false` | AOT 产物本身就是单个原生 PE，没有 apphost/bundle 概念 |
-| `EnableCompressionInSingleFile=false` | 同上，只对单文件形态有意义 |
 | `InvariantGlobalization=false` | 否则区域性行为被固定为 Invariant（日期格式、GBK 迁移探测都受影响） |
+
+单文件相关开关**不在全局属性里**：`aot` 变体本身就是单个原生 PE，没有 apphost/bundle 概念，所以 `PublishSingleFile` / `EnableCompressionInSingleFile` 只在 `PublishVariant=net` 的条件属性组里打开——写进全局属性等于给 AOT 叠一层无意义的开关。
 
 ### UPX
 
-由 csproj 的 `UpxCompressNativeBinary` target 完成，原地压缩 `$(PublishDir)` 里的 exe；
-解析顺序 `-p:UpxPath` → `tools/upx/upx.exe` → 自动下载最新 win64 版。
-拿不到只警告不失败（体积优化而已）。
+由 csproj 的 `UpxCompressNativeBinary` target 完成，原地压缩 `$(PublishDir)` 里的原生可执行文件；拿不到只警告不失败（体积优化而已）。
 
-实测：未压缩 9.1 MB（含四种协议的传输层），UPX `--best` 后 3.8 MB。
+**覆盖范围是 Windows PE 与 Linux ELF，不含 macOS**：
 
-四个必须记住的点：
+| 目标 | 是否压缩 | 依据 |
+|------|----------|------|
+| Windows PE | 是 | `win-x64`：9,677,824 → 4,065,792 字节（42.01%，`win64/pe`） |
+| Linux ELF | 是 | Windows 上的 upx 压同一份 ELF：14,750,709 → 7,103,996 字节（48.16%，`linux/amd64`）；压缩后的 ELF 能否运行由 CI 的 Linux 矩阵项冒烟验证 |
+| macOS Mach-O | 否 | UPX 重写 Mach-O 会破坏代码签名，而 Apple Silicon 上未签名二进制会被内核终止（`Killed: 9`），UPX 无法重新签名。官方 5.3.0 也只发布 Linux 各架构与 win32/win64 资产，没有 macOS 产物 |
+
+工具解析顺序：`-p:UpxPath` → `tools/upx/upx[.exe]` → `PATH` 里的 `upx`（仅非 Windows 宿主）→ 自动下载最新 win64 版（仅 Windows 宿主）。
+
+- **为什么非 Windows 宿主不自动下载**：官方 Linux 包是 `tar.xz`，.NET 没有内置 xz 解压，为此引入外部 tar 依赖不划算；这两个平台装一份即可（`apt install upx-ucl` / `brew install upx`）。CI 的 Linux 矩阵项用固定版本装到 `tools/upx/upx` 并写 `.version`，保证压缩工具与其他平台同版本。
+- **为什么 UPX 二进制不需要平台匹配**：目标格式由文件头自动识别。Windows 上的 `upx.exe` 照样能压出 `linux/amd64`，所以条件判断的是**目标 RID**，不是宿主。
+- **缓存在非 Windows 上不可核版本时按可用处理**：手工放进 `tools/upx/upx` 没有 `.version`，若严格比对固定版本就会被判成「版本不符」而静默跳过压缩。
+
+体积一律按 `1 MB = 1048576` 字节口径（与 PowerShell 的 `1MB`、CI 日志里的 `{0:N2} MB` 一致）：混用十进制会写出「未压缩 9.7 MB → 后 3.9 MB」这种自相矛盾的数字。
+
+五个必须记住的点：
 
 1. **必须挂在 `AfterTargets="CopyNativeBinary"`**。该 target 本身也是 `AfterTargets="Publish"`，
    两个同挂 Publish 的 target 顺序不确定 —— UPX 先跑就会压中间产物，随后被
@@ -404,20 +476,32 @@ AOT 发布（注入 `AppVersion` / `AppVersionType`）→ 断言单 exe / 无 pd
    `Condition`，那时路径变量还是空的；一旦写进 Condition，整个 target 会被跳过（含依赖），
    压缩静默失效（实测踩过：日志里看得见"使用指定的 UPX"，产物仍是未压缩体积）。
    正确做法是把路径判断放到 task 级 `Condition` 上（见 `Pings.csproj`）。
-3. **不能把「目标是不是 Windows」缓存成顶层属性**。`RuntimeIdentifier` 由 pubxml 在文件末尾
-   导入后才生效，顶层属性求值早于它，读到的永远是空值——结果 UPX 的两个 target 都因条件
-   不成立被跳过，产物保持 9.1 MB 而日志里没有任何提示（CI 的体积断言会拦下，本地很容易误以为
-   已压缩）。判断要写成 target 执行期的内联表达式 `$(RuntimeIdentifier.StartsWith('win'))`。
-4. **UPX 生效与否看日志**：正常会打印 `UPX 压缩（5.3.0）：…`。只跑 `dotnet publish`
-   默认 verbosity 看不到，用 `-v:n` 确认；或者直接看产物体积（3.8 MB 对 9.1 MB）。
+3. **不能把「目标是不是 Windows」缓存成顶层属性**。不带 `-r` 时 `RuntimeIdentifier` 是空值（`dotnet build` 要覆盖两个 TFM），把空值缓存进属性会让条件永久不成立——结果 UPX 的两个 target 都因条件不成立被跳过，产物保持未压缩体积而日志里没有任何提示（端到端会被 CI 的 `upx -l` 断言拦下，本地很容易误以为已压缩）。判断要写成 target 执行期的内联表达式。
+4. **确认 UPX 生效用 `upx -l`，不要看体积**：`upx -l <exe>` 对已压缩产物退出 0、对未压缩返回 2（`NotPackedException`）。体积阈值会随 .NET / ILCompiler 版本漂移，而且「压了但没变小」与「压根没压」在阈值下可能给出同一个结论。日志里的 `UPX 压缩（5.3.0）：…` 是构建侧的自述，真正的证据在产物上。
+5. **仓库内路径一律用正斜杠**。`RepoRoot` 与 `tools/upx/` 若用反斜杠拼，在 Linux / macOS 上反斜杠是字面量字符而不是分隔符：`UsingTask` 的 `Source` 找不到 `BuildTasks.cs`，UPX 目录也会定位到不存在的名字。MSBuild 在两个平台上都接受 `/`。
 
-CI 与 Release 的 `env.UPX_VERSION` 必须一致并固定，否则同一个 tag 两次构建的产物不可重现。
+`env.UPX_VERSION` 定义在 `build-matrix.yml`，CI 与 Release 共用同一份，否则同一个 tag 两次构建的产物不可重现。
 
 ## 编码约定
 
 - 源码 UTF-8（无 BOM），行尾跟随仓库既有风格。
 - 类型/成员 PascalCase；私有字段 `_camelCase`；不使用下划线命名。
 - 修改配置模型时必须同步更新：`ConfigValidator`、README 字段表、相应测试。
+
+### 排版：一段一行，项内不折行
+
+编辑器已开启自动换行，所以**不要按几十列手工折行**。硬换行会把一句话切成几段，改一个词就要重排整段，diff 里也看不出真实的语义边界。
+
+| 对象 | 规则 |
+|------|------|
+| 段落（`.cs` 的 `//`、`///`，`.csproj` 的 `<!-- -->`，`.md` 正文） | 一段写一行，换行只用来分段 |
+| 列表 | 每项一行，项内不再折行 |
+| XML 元素属性 | 一律写在一行：`<EmbeddedResource Update="…" LogicalName="…" />`、`<Target Name="…" AfterTargets="…" Condition="…">`、任务调用的多个属性，哪怕这行很长 |
+| 表格、代码块、ASCII 图示 | 保持原有结构，不做合并 |
+
+下面这些换行是**结构**而非硬换行，必须保留：列表项之间、表格行之间、代码块内部、`=====` 分隔线、多段之间的空行、MSBuild 元素的嵌套（`<ParameterGroup>` 里每项一行）。
+
+`.csproj` 里另有一类「必须单行」的注释属于构建硬约束（属性值混进换行会报 `NETSDK1124` / `NETSDK1083`），与排版偏好无关，改动时照注释说明即可。
 
 ## 多语言资源约定
 

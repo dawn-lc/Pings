@@ -233,7 +233,7 @@ public class LocalizationTests
     public void 自动语言与未知标记都不改动当前语言()
     {
         CultureInfo original = CultureInfo.CurrentUICulture;
-        
+
         try
         {
             CultureInfo.CurrentUICulture = new CultureInfo("zh-CN");

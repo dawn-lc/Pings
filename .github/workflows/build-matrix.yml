@@ -1,0 +1,252 @@
+name: Build matrix
+
+# 全平台 × 全变体的唯一构建定义。CI 与 Release 都调用它，避免「两边各写一份矩阵」走散。
+#
+# 为什么是矩阵：AOT 不能跨操作系统编译，每个平台必须在自己的 runner 上构建；
+# 而平台与变体都是数据，不该变成三份几乎相同的发布配置或三份 workflow。
+#
+# 两个变体（对应 csproj 的 PublishVariant）：
+#   net  .NET 自包含单文件（免安装运行时，体积约 12 MB）
+#   aot  Native AOT；Windows 与 Linux 再叠 UPX，macOS 不压（会破坏签名导致无法启动）
+
+on:
+  workflow_call:
+    inputs:
+      appVersion:
+        description: 版本号；留空即开发构建（0.0.0-Dev）
+        required: false
+        type: string
+        default: ''
+      appVersionType:
+        description: 发布类型（Release / Beta / Dev）
+        required: false
+        type: string
+        default: ''
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  UPX_VERSION: '5.3.0'
+
+jobs:
+  build:
+    name: ${{ matrix.rid }} / ${{ matrix.variant }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    strategy:
+      # 一个平台失败不该掩盖其它平台的结果：先看完所有失败，再统一修
+      fail-fast: false
+
+      matrix:
+        include:
+          # RID 决定 TFM（win-* → net10.0-windows，其余 → net10.0）与产物名，
+          # 所以这里只需要「RID ↔ runner」的对应关系，不用再写 TargetFramework。
+          # runner 只能是 GitHub 现役标签：Intel macOS 用 macos-15-intel（macos-13 已下线）。
+
+          # Windows 只用 windows-latest：Windows Server 2025 镜像自带 VC.Tools.ARM64 与 Windows SDK，
+          # 足够的工具链让它在 x64 上交叉构建 win-arm64（MSVC 支持 ARM64 目标）。
+          # 代价是 ARM64 产物没法在 x64 runner 上执行，验证方式随之改为「文件头 + UPX」而不是跑起来。
+          - { os: windows-latest,   rid: win-x64,    variant: net }
+          - { os: windows-latest,   rid: win-x64,    variant: aot }
+          - { os: windows-latest,   rid: win-arm64,  variant: net }
+          - { os: windows-latest,   rid: win-arm64,  variant: aot }
+          - { os: ubuntu-latest,    rid: linux-x64,  variant: net }
+          - { os: ubuntu-latest,    rid: linux-x64,  variant: aot }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, variant: net }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, variant: aot }
+          - { os: macos-15-intel,   rid: osx-x64,    variant: net }
+          - { os: macos-15-intel,   rid: osx-x64,    variant: aot }
+          - { os: macos-latest,     rid: osx-arm64,  variant: net }
+          - { os: macos-latest,     rid: osx-arm64,  variant: aot }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ matrix.rid }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-${{ matrix.rid }}-
+
+      # Linux 宿主不会自动下载 UPX（官方包是 tar.xz），这里按固定版本装到约定位置 tools/upx/upx，
+      # 与 Windows 自动下载所用的版本一致：所有产物的压缩都必须来自同一版 UPX，否则压缩率与可重现性都无从谈起。
+      - name: Provision UPX
+        if: runner.os == 'Linux' && matrix.variant == 'aot'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$(uname -m)" in
+            aarch64 | arm64) upx_arch="arm64" ;;
+            x86_64 | amd64) upx_arch="amd64" ;;
+            *) echo "不支持的架构：$(uname -m)" >&2; exit 1 ;;
+          esac
+
+          url="https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-${upx_arch}_linux.tar.xz"
+          curl -fsSL "$url" -o /tmp/upx.tar.xz
+          tar -xJf /tmp/upx.tar.xz -C /tmp
+
+          mkdir -p tools/upx
+          cp "/tmp/upx-${UPX_VERSION}-${upx_arch}_linux/upx" tools/upx/upx
+          chmod +x tools/upx/upx
+
+          # 与 Windows 自动下载一致地记录版本，让构建期能核对「这次用的确实是固定版本」
+          printf '%s' "$UPX_VERSION" > tools/upx/.version
+          tools/upx/upx --version
+
+      # 只在这里发布，不重复跑测试：测试与平台无关，由 CI 跑一次就够。
+      # 每个矩阵项再跑一遍等于把同一批用例执行 12 次。
+      - name: Publish
+        shell: pwsh
+        run: |
+          $rid = "${{ matrix.rid }}"
+          $variant = "${{ matrix.variant }}"
+          $out = "dist/$rid/$variant"
+
+          # 唯一决定平台与架构的参数是 -r，TFM 由 csproj 推导。这里刻意不写 -f：
+          # 否则「RID → TFM」这条新发布模型的核心推导就永远不会被真正执行到。
+          # UpxVersion 传固定版本，让 Windows 自动下载与 Linux 预置的 UPX 同源。
+          $dotnetArgs = @(
+            "publish", "src/Pings/Pings.csproj",
+            "-c", "Release",
+            "-r", $rid,
+            "-p:PublishVariant=$variant",
+            "-p:UpxVersion=$env:UPX_VERSION",
+            "-o", $out
+          )
+
+          # 版本号由调用方注入（Release 传 tag 解析结果，CI 留空＝开发构建）。
+          # 空值不当参数传：-p:AppVersion= 把属性设成空串与「未传」在 MSBuild 里是两种语义，
+          # csproj 的默认值条件虽然能兜住，但没有理由去赌。
+          $appVersion = "${{ inputs.appVersion }}"
+          if ($appVersion -ne "") {
+            $dotnetArgs += "-p:AppVersion=$appVersion"
+            $dotnetArgs += "-p:AppVersionType=${{ inputs.appVersionType }}"
+          }
+
+          & dotnet @dotnetArgs
+          if ($LASTEXITCODE -ne 0) { throw "发布失败：$rid / $variant（退出码 $LASTEXITCODE）" }
+
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          $rid = "${{ matrix.rid }}"
+          $variant = "${{ matrix.variant }}"
+          $out = "dist/$rid/$variant"
+
+          # 产物是否带 .exe 由 RID 决定，而不是 runner 操作系统：
+          # 这样判断与 csproj 的推导同源，也不依赖 PowerShell 版本（$IsWindows 只在 7+ 存在）。
+          $isWin = $rid.StartsWith("win")
+          $exe = if ($isWin) { "$out/Pings.exe" } else { "$out/Pings" }
+
+          if (-not (Test-Path $exe)) { throw "发布产物不存在：$exe" }
+
+          # 能否在本 runner 上执行，取决于目标架构与 runner 架构是否一致。
+          # Windows 只有 windows-latest 一种 runner，win-arm64 是交叉构建出来的，x64 上跑不了。
+          $targetArch = if ($rid -match 'arm64$') { 'ARM64' } elseif ($rid -match 'x64$') { 'X64' } else { '' }
+          $canRun = $targetArch -eq "$env:RUNNER_ARCH"
+
+          if ($canRun) {
+            # 单文件由 csproj 的 VerifyPublishOutput 在构建期断言，这里补它证明不了的事：
+            # 产物真的能跑，且版本元数据链路没断。
+            $actual = & $exe --version
+            if ($LASTEXITCODE -ne 0) { throw "--version 退出码 $LASTEXITCODE" }
+
+            $expected = "${{ inputs.appVersion }}"
+            if ($expected -ne "") {
+              # 期望文本与 AppInfo.FormatVersionText 的规则一致：Release 不带后缀，其它类型带 -类型。
+              # 这里必须独立断言一次——「tag 打了但版本没进二进制」是无声失败，
+              # 不查的话 12 个产物会带着错版本号直接发出去。
+              $type = "${{ inputs.appVersionType }}"
+              $want = if ($type -eq '' -or $type -eq 'Release') { "Pings $expected" } else { "Pings $expected-$type" }
+              if ($actual -ne $want) { throw "版本号不符：期望 $want，实际 $actual" }
+            }
+          }
+          else {
+            # 交叉构建的产物跑不起来，就断言它能被证明的部分：文件头里的目标架构。
+            # 这条比「文件存在」有意义得多——RID 没生效时会产出宿主架构的二进制，那种错误只能靠文件头发现。
+            $actual = "(未执行：$env:RUNNER_ARCH runner 无法运行 $targetArch 产物)"
+            $bytes = [System.IO.File]::ReadAllBytes($exe)
+            $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 4)
+            $wantMachine = 0xAA64   # IMAGE_FILE_MACHINE_ARM64
+            if ($machine -ne $wantMachine) {
+              throw ("文件头架构不符：期望 ARM64（0xAA64），实际 0x{0:X4}（{1}）" -f $machine, $exe)
+            }
+            Write-Host ("交叉构建校验通过：{0} 的文件头是 ARM64" -f $exe)
+          }
+
+          # UPX 只压 Windows PE 与 Linux ELF（macOS 压了会破坏签名、跑不起来）。
+          # upx -l 对未压缩产物返回 2，是确定的事实；用体积阈值判断会随 .NET / ILCompiler 版本漂移。
+          if ($variant -eq "aot" -and ($isWin -or $rid.StartsWith("linux"))) {
+            $upx = if ($isWin) { "tools/upx/upx.exe" } else { "tools/upx/upx" }
+            & $upx -l $exe
+            if ($LASTEXITCODE -ne 0) { throw "UPX 未生效：$rid / $variant" }
+          }
+
+          $size = (Get-Item $exe).Length
+          Write-Host ("产物 {0} / {1}：{2}（{3:N2} MB），{4}" -f $rid, $variant, $exe, ($size / 1MB), $actual)
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          # 回环 ICMP：不依赖外网，任何 runner 上都能过。
+          # 用 --once 顺带覆盖「无参数配置下不会卡在交互提问」这条约定。
+          $rid = "${{ matrix.rid }}"
+          $variant = "${{ matrix.variant }}"
+
+          $targetArch = if ($rid -match 'arm64$') { 'ARM64' } elseif ($rid -match 'x64$') { 'X64' } else { '' }
+          if ($targetArch -ne "$env:RUNNER_ARCH") {
+            # 交叉构建产物在本 runner 上无法执行，冒烟留给拿到该架构机器的人；
+            # 这里不假装跑过——静默跳过比失败更危险。
+            Write-Host "跳过冒烟测试：$env:RUNNER_ARCH runner 无法运行 $targetArch 产物（$rid）"
+            return
+          }
+
+          $exe = if ($rid.StartsWith("win")) { "dist/$rid/$variant/Pings.exe" } else { "dist/$rid/$variant/Pings" }
+
+          $config = @'
+          {
+            "tasks": [ { "name": "loopback", "protocol": "icmp", "target": "127.0.0.1", "timeout": 2000 } ],
+            "logging": { "logFilePath": "smoke.log", "enableConsoleLog": false }
+          }
+          '@
+
+          # 用 WriteAllText 而不是 Set-Content -Encoding utf8NoBOM：后者是 PowerShell 7 才有的取值
+          [System.IO.File]::WriteAllText((Join-Path $PWD "smoke.json"), $config, (New-Object System.Text.UTF8Encoding($false)))
+
+          & $exe smoke.json --once --no-color
+          if ($LASTEXITCODE -ne 0) { throw "--once 退出码 $LASTEXITCODE（回环地址应可达）" }
+
+      - name: Rename for release
+        shell: pwsh
+        run: |
+          # 发布附件要求文件名唯一：12 个产物都叫 Pings(.exe) 会在 upload/release 时互相覆盖。
+          $rid = "${{ matrix.rid }}"
+          $variant = "${{ matrix.variant }}"
+          $ext = if ($rid.StartsWith("win")) { ".exe" } else { "" }
+          $src = "dist/$rid/$variant/Pings$ext"
+          $dst = "dist/assets/Pings-$rid-$variant$ext"
+
+          New-Item -ItemType Directory -Path "dist/assets" -Force | Out-Null
+          Move-Item $src $dst
+
+      # 非 Windows 的产物丢了可执行位，从 artifact 下载回来就跑步起来
+      - name: Ensure executable bit
+        if: runner.os != 'Windows'
+        run: chmod +x dist/assets/*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pings-${{ matrix.rid }}-${{ matrix.variant }}
+          path: dist/assets/*
+          if-no-files-found: error
