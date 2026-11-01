@@ -104,11 +104,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "--version 退出码 $LASTEXITCODE" }
           if ($actual -ne $expected) { throw "版本号不符: 期望 '$expected'，实际 '$actual'" }
 
-          # UPX 是否真的压缩过：直接问 upx，而不是比体积阈值（阈值会随 .NET 版本漂移）
+          # UPX 是否真的压缩过：直接问 upx，而不是比体积阈值。
+          # upx -l 对未压缩文件返回 2（NotPackedException）、对已压缩返回 0，是确定的事实；
+          # 而体积阈值会随 .NET / ILCompiler 版本漂移。
+          #
+          # 注意：throw 文案里不要用中文引号 —— PowerShell 7 把它们当作字符串定界符，
+          # 会直接把整个脚本解成语法错误（v1.0.22 发布就挂在这里）。
           $size = (Get-Item $exe).Length
           Write-Host ("产物：{0:N2} MB，版本 {1}" -f ($size / 1MB), $actual)
-          if ($size -gt 8MB) {
-            throw ("{0:N2} MB 偏大，UPX 可能未生效（看构建日志里的 “UPX 压缩” 一行）" -f ($size / 1MB))
+
+          $upx = "tools/upx/upx.exe"
+          if (-not (Test-Path $upx)) { throw "找不到 $upx，无法验证 UPX 是否生效" }
+
+          & $upx -l $exe
+          if ($LASTEXITCODE -ne 0) {
+            throw ("UPX 未生效：upx -l 退出码 {0}（未压缩产物），产物 {1:N2} MB" -f $LASTEXITCODE, ($size / 1MB))
           }
 
       - name: Smoke test (loopback)
