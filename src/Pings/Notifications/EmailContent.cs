@@ -50,23 +50,34 @@ namespace Pings.Notifications
             return new EmailContent(subject, textBody, htmlBody);
         }
 
-        /// <summary>内置纯文本正文：字段顺序与 HTML 版本一致，便于对照排查。</summary>
+        /// <summary>
+        /// 内置正文的字段序列。纯文本与 HTML 两种格式都用它渲染，
+        /// 于是新增字段只改一处；早先两份各自硬编码，出现过 HTML 里「丢包率 | 丢包率(窗口…)：…」这种重复标签。
+        /// </summary>
+        private static (string Label, string Value)[] DefaultFields(ProbeTaskSnapshot snapshot) =>
+        [
+            (Resources.NotificationLabelTaskName, snapshot.Name),
+            (Resources.NotificationLabelEndpoint, snapshot.Endpoint),
+            (Resources.NotificationLabelProtocol, snapshot.Protocol.ToConfigString()),
+            (Resources.NotificationLabelStatus, snapshot.StatusText),
+            (Resources.NotificationLabelDelay, snapshot.DelayText),
+            (string.Format(CultureInfo.CurrentCulture, Resources.NotificationLabelLossRateWindow, snapshot.Statistics.WindowCount), snapshot.LossText),
+            (string.Format(CultureInfo.CurrentCulture, Resources.NotificationLabelFailureRateWindow, snapshot.Statistics.WindowCount), snapshot.FailureText),
+            (Resources.NotificationLabelTotalLossRate, FormatRate(snapshot.Statistics.TotalLossRate)),
+            (Resources.NotificationLabelLastEvent, snapshot.LastEvent),
+            (Resources.NotificationLabelTimestamp, snapshot.TimestampText)
+        ];
+
+        /// <summary>内置纯文本正文。</summary>
         private static string BuildDefaultTextBody(ProbeTaskSnapshot snapshot)
         {
             StringBuilder body = new();
             body.AppendLine($"{AppInfo.ProductName} {Resources.NotificationAlertTitle}");
             body.AppendLine();
 
-            AppendTextLine(body, Resources.NotificationLabelTaskName, snapshot.Name);
-            AppendTextLine(body, Resources.NotificationLabelEndpoint, snapshot.Endpoint);
-            AppendTextLine(body, Resources.NotificationLabelProtocol, snapshot.Protocol.ToConfigString());
-            AppendTextLine(body, Resources.NotificationLabelStatus, snapshot.StatusText);
-            AppendTextLine(body, Resources.NotificationLabelDelay, snapshot.DelayText);
-            body.AppendLine(string.Format(CultureInfo.CurrentCulture, Resources.NotificationLossRateWithWindow, snapshot.Statistics.WindowCount, snapshot.LossText));
-            body.AppendLine(string.Format(CultureInfo.CurrentCulture, Resources.NotificationFailureRateWithWindow, snapshot.Statistics.WindowCount, snapshot.FailureText));
-            AppendTextLine(body, Resources.NotificationLabelTotalLossRate, $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
-            AppendTextLine(body, Resources.NotificationLabelLastEvent, snapshot.LastEvent);
-            AppendTextLine(body, Resources.NotificationLabelTimestamp, FormatTimestamp(snapshot));
+            foreach ((string label, string value) in DefaultFields(snapshot))
+                AppendTextLine(body, label, value);
+
             body.AppendLine();
             body.AppendLine(AppInfo.VersionText);
 
@@ -84,9 +95,6 @@ namespace Pings.Notifications
             string accent = AccentColor(snapshot);
 
             StringBuilder html = new();
-            html.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>");
-            html.Append($"<body style=\"margin:0;padding:24px 12px;background:#f2f4f7;font-family:{FontFamily};color:#101828\">");
-            html.Append("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"max-width:640px;margin:0 auto;border-collapse:separate;background:#ffffff;border-radius:12px;overflow:hidden\">");
 
             // 标题条：一眼看出严重程度，第二行是状态原文。
             html.Append($"<tr><td style=\"padding:20px 24px;background:{accent};color:#ffffff\">");
@@ -95,22 +103,17 @@ namespace Pings.Notifications
             html.Append("</td></tr>");
 
             html.Append("<tr><td style=\"padding:6px 24px 18px\"><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"border-collapse:collapse\">");
-            AppendHtmlRow(html, Resources.NotificationLabelTaskName, snapshot.Name);
-            AppendHtmlRow(html, Resources.NotificationLabelEndpoint, snapshot.Endpoint);
-            AppendHtmlRow(html, Resources.NotificationLabelProtocol, snapshot.Protocol.ToConfigString());
-            AppendHtmlRow(html, Resources.NotificationLabelStatus, snapshot.StatusText);
-            AppendHtmlRow(html, Resources.NotificationLabelDelay, snapshot.DelayText);
-            AppendHtmlRow(html, Resources.NotificationLabelLossRate, string.Format(CultureInfo.CurrentCulture, Resources.NotificationLossRateWithWindow, snapshot.Statistics.WindowCount, snapshot.LossText));
-            AppendHtmlRow(html, Resources.NotificationLabelFailureRate, string.Format(CultureInfo.CurrentCulture, Resources.NotificationFailureRateWithWindow, snapshot.Statistics.WindowCount, snapshot.FailureText));
-            AppendHtmlRow(html, Resources.NotificationLabelTotalLossRate, $"{snapshot.Statistics.TotalLossRate * 100:0.0}%");
-            AppendHtmlRow(html, Resources.NotificationLabelLastEvent, snapshot.LastEvent);
-            AppendHtmlRow(html, Resources.NotificationLabelTimestamp, FormatTimestamp(snapshot), last: true);
+
+            (string Label, string Value)[] fields = DefaultFields(snapshot);
+
+            for (int i = 0; i < fields.Length; i++)
+                AppendHtmlRow(html, fields[i].Label, fields[i].Value, last: i == fields.Length - 1);
+
             html.Append("</table></td></tr>");
 
             html.Append($"<tr><td style=\"padding:12px 24px;background:#f9fafb;border-top:1px solid #eaecf0;font-size:12px;line-height:1.5;color:#667085\">{Encode(AppInfo.VersionText)}</td></tr>");
-            html.Append("</table></body></html>");
 
-            return html.ToString();
+            return WrapInCard(html.ToString());
         }
 
         /// <summary>
@@ -121,11 +124,19 @@ namespace Pings.Notifications
         {
             string body = Encode(text).Replace("\r\n", "<br>", StringComparison.Ordinal).Replace("\n", "<br>", StringComparison.Ordinal);
 
+            return WrapInCard($"<tr><td style=\"padding:24px;font-size:14px;line-height:1.6\">{body}</td></tr>");
+        }
+
+        /// <summary>
+        /// 邮件外壳：单列卡片。只用 table + 内联样式——邮件客户端会剥掉 <c>&lt;style&gt;</c>，也不保证支持 flex / grid。
+        /// </summary>
+        private static string WrapInCard(string inner)
+        {
             StringBuilder html = new();
             html.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>");
             html.Append($"<body style=\"margin:0;padding:24px 12px;background:#f2f4f7;font-family:{FontFamily};color:#101828\">");
-            html.Append("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"max-width:640px;margin:0 auto;border-collapse:separate;background:#ffffff;border-radius:12px\">");
-            html.Append($"<tr><td style=\"padding:24px;font-size:14px;line-height:1.6\">{body}</td></tr>");
+            html.Append("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"max-width:640px;margin:0 auto;border-collapse:separate;background:#ffffff;border-radius:12px;overflow:hidden\">");
+            html.Append(inner);
             html.Append("</table></body></html>");
 
             return html.ToString();
@@ -146,8 +157,8 @@ namespace Pings.Notifications
             };
         }
 
-        private static string FormatTimestamp(ProbeTaskSnapshot snapshot)
-            => snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        private static string FormatRate(double rate)
+            => (rate * 100).ToString("0.0", CultureInfo.CurrentCulture) + "%";
 
         private static void AppendTextLine(StringBuilder builder, string label, string value)
             => builder.AppendLine(string.Format(CultureInfo.CurrentCulture, Resources.NotificationLineFormat, label, value));

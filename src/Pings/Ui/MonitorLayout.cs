@@ -7,6 +7,8 @@ namespace Pings.Ui
         Target,
         Status,
         Delay,
+        /// <summary>窗口内 RTT 分布（最小/平均/最大/p95），只在很宽的窗口下显示。</summary>
+        Rtt,
         Loss,
         Log
     }
@@ -33,8 +35,35 @@ namespace Pings.Ui
         /// <summary>至少保留一个数据行，否则表格毫无意义。</summary>
         public const int MinDataRows = 1;
 
-        /// <summary>可以完整显示所有列的最小宽度。</summary>
-        public const int FullWidthColumns = 92;
+        /// <summary>可以完整显示所有核心列的最小宽度。</summary>
+        public const int CoreColumnsWidth = 92;
+
+        /// <summary>
+        /// 额外显示 RTT 分布列所需的最小宽度。
+        /// </summary>
+        /// <remarks>
+        /// 比核心列阈值高很多：该列的表头要列出四个数字的含义（最小/平均/最大/p95），
+        /// 中文下约占 20 列宽。窗口不够时挤进去只会让每列都变成省略号，不如不显示。
+        /// </remarks>
+        public const int FullColumnsWidth = 120;
+
+        /// <summary>
+        /// 全部列的规范顺序。
+        /// </summary>
+        /// <remarks>
+        /// 作为「是否完整显示」的判据单一真相源：调用方不必硬编码列数，
+        /// 新增列时只改这里与 <see cref="ColumnsFor" />，各处提示会自动跟上。
+        /// </remarks>
+        public static readonly IReadOnlyList<MonitorColumn> AllColumns =
+        [
+            MonitorColumn.Name,
+            MonitorColumn.Target,
+            MonitorColumn.Status,
+            MonitorColumn.Delay,
+            MonitorColumn.Rtt,
+            MonitorColumn.Loss,
+            MonitorColumn.Log
+        ];
 
         /// <summary>给定可用高度，最多能放多少个数据行（不触发滚动）。</summary>
         public static int DataRowCapacity(int terminalHeight)
@@ -53,7 +82,8 @@ namespace Pings.Ui
         /// </remarks>
         public static IReadOnlyList<MonitorColumn> ColumnsFor(int terminalWidth) => terminalWidth switch
         {
-            >= FullWidthColumns => [MonitorColumn.Name, MonitorColumn.Target, MonitorColumn.Status, MonitorColumn.Delay, MonitorColumn.Loss, MonitorColumn.Log],
+            >= FullColumnsWidth => AllColumns,
+            >= CoreColumnsWidth => [MonitorColumn.Name, MonitorColumn.Target, MonitorColumn.Status, MonitorColumn.Delay, MonitorColumn.Loss, MonitorColumn.Log],
             >= 76 => [MonitorColumn.Name, MonitorColumn.Target, MonitorColumn.Status, MonitorColumn.Delay, MonitorColumn.Loss],
             >= 62 => [MonitorColumn.Name, MonitorColumn.Status, MonitorColumn.Delay, MonitorColumn.Loss, MonitorColumn.Log],
             >= 50 => [MonitorColumn.Name, MonitorColumn.Status, MonitorColumn.Delay, MonitorColumn.Loss],

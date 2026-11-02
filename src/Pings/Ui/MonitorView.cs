@@ -84,12 +84,18 @@ namespace Pings.Ui
             try
             {
                 await AnsiConsole.Live(BuildTable())
+                    // 溢出策略显式写出来，因为行高稳定性完全依赖它：垂直方向用 Ellipsis 截断而不是 Fold，
+                    // 否则内容变高会让 Live 的上移量与实际不符，画面逐帧错位。
+                    // 裁剪方向选 Bottom：默认的 Top 在行数算多或窗口被拉窄时裁掉的正是标题与表头。
+                    .Overflow(VerticalOverflow.Ellipsis)
+                    .Cropping(VerticalOverflowCropping.Bottom)
                     .StartAsync(async context =>
                     {
                         while (!token.IsCancellationRequested)
                         {
+                            // 不要再跟一个 context.Refresh()：UpdateTarget 内部已经调用 Refresh
+                            // （实测 0.57.2 的 IL），多调一次等于每帧把整张表渲染两遍。
                             context.UpdateTarget(BuildTable());
-                            context.Refresh();
 
                             try
                             {
@@ -129,7 +135,7 @@ namespace Pings.Ui
             Table table = new()
             {
                 Title = new TableTitle(string.Format(Resources.MonitorTitle, DateTime.Now.ToString(Resources.DateTimeFormat))),
-                Caption = new TableTitle(BuildCaption(selection.Hidden, columns.Count < 6, droppedWarnings)),
+                Caption = new TableTitle(BuildCaption(selection.Hidden, columns.Count < MonitorLayout.AllColumns.Count, droppedWarnings)),
                 Expand = true
             };
 
@@ -154,6 +160,7 @@ namespace Pings.Ui
             MonitorColumn.Target => Resources.MonitorColumnTarget,
             MonitorColumn.Status => Resources.MonitorColumnStatus,
             MonitorColumn.Delay => Resources.MonitorColumnDelay,
+            MonitorColumn.Rtt => Resources.MonitorColumnRtt,
             MonitorColumn.Loss => Resources.MonitorColumnLoss,
             MonitorColumn.Log => Resources.MonitorColumnLog,
             _ => string.Empty
@@ -205,6 +212,7 @@ namespace Pings.Ui
             MonitorColumn.Target => Cell(snapshot.Endpoint),
             MonitorColumn.Status => Cell(snapshot.StatusText, StatusStyle(snapshot.Category)),
             MonitorColumn.Delay => Cell(FormatDelay(snapshot)),
+            MonitorColumn.Rtt => Cell(snapshot.RttDistributionText),
             MonitorColumn.Loss => Cell(snapshot.LossText, LossStyle(snapshot.Statistics.WindowLossRate)),
             MonitorColumn.Log => Cell(snapshot.Warning is { Length: > 0 } warning
                 ? snapshot.WarningCount > 1 ? $"[{snapshot.WarningCount}] {warning}" : warning
@@ -233,23 +241,35 @@ namespace Pings.Ui
 
         private static readonly Style WarningStyle = new(Color.Yellow, Color.Red, Decoration.Bold);
 
+        // Style 是类：按帧构造会产生每秒数十次无用分配，这些样式在进程内不变，缓存一次即可。
+        private static readonly Style StatusOkStyle = new(Color.Green);
+        private static readonly Style StatusSilentStyle = new(Color.Red, decoration: Decoration.Bold);
+        private static readonly Style StatusServiceStyle = new(Color.Orange1);
+        private static readonly Style StatusNameStyle = new(Color.Yellow);
+        private static readonly Style StatusProtocolStyle = new(Color.Orange1);
+        private static readonly Style StatusLocalStyle = new(Color.Grey);
+        private static readonly Style StatusUnknownStyle = new(Color.Grey);
+
         private static Style StatusStyle(ProbeFaultCategory category) => category switch
         {
-            ProbeFaultCategory.None => new Style(Color.Green),
-            ProbeFaultCategory.NoResponse => new Style(Color.Red, decoration: Decoration.Bold),
-            ProbeFaultCategory.Unreachable => new Style(Color.Red),
-            ProbeFaultCategory.ServiceUnavailable => new Style(Color.Orange1),
-            ProbeFaultCategory.NameResolution => new Style(Color.Yellow),
-            ProbeFaultCategory.ProtocolError => new Style(Color.Orange1),
-            ProbeFaultCategory.LocalResource => new Style(Color.Grey),
-            _ => new Style(Color.Grey)
+            ProbeFaultCategory.None => StatusOkStyle,
+            ProbeFaultCategory.NoResponse => StatusSilentStyle,
+            ProbeFaultCategory.ServiceUnavailable => StatusServiceStyle,
+            ProbeFaultCategory.NameResolution => StatusNameStyle,
+            ProbeFaultCategory.ProtocolError => StatusProtocolStyle,
+            ProbeFaultCategory.LocalResource => StatusLocalStyle,
+            _ => StatusUnknownStyle
         };
+
+        private static readonly Style LossOkStyle = new(Color.Green);
+        private static readonly Style LossLowStyle = new(Color.Yellow);
+        private static readonly Style LossHighStyle = new(Color.Red);
 
         private static Style LossStyle(double rate) => rate switch
         {
-            <= 0 => new Style(Color.Green),
-            < 0.05 => new Style(Color.Yellow),
-            _ => new Style(Color.Red)
+            <= 0 => LossOkStyle,
+            < 0.05 => LossLowStyle,
+            _ => LossHighStyle
         };
     }
 }

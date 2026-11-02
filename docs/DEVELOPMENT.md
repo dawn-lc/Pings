@@ -104,8 +104,10 @@ Pings/
 
 ## 告警语义
 
-- 状态事件只在**故障类别**变化时产生。同一类别内的 `Timeout ↔ NoReply` 只更新快照与日志，
-  不重复入队、不重复通知。
+- 状态事件只在**故障类别**变化时产生（`ProbeFaultCategory` 本身就是去重粒度）。同一类别内的表现切换只更新快照与明细事件，不重复写日志、不入告警队列、不发通知。
+  - `NoResponse` 包含超时、无回声、响应超时与明确不可达：设备离线时 ARP 缓存在「有旧条目」与「重新解析失败」之间翻转，探测结果就会在 `请求超时 ↔ 目标主机不可达` 之间跳，两者是同一故障的两个观测面，不是两次状态变化。具体原因不会丢——`ProbeStatus`、界面状态列与日志文案仍然区分它们。
+  - `ServiceUnavailable`（端口关闭 / TLS 失败 / 状态码异常）单独成类：它证明主机可达，是服务问题而非目标问题，这个区分对运维有价值。
+  - 类别不变、只是 `ProbeStatus` 变了时产生 `ProbeEventKind.StatusDetail`（`Info` 级），只有 `global.enableVerboseLogging` 为真时才写日志；「最近事件」不会被它改写，仍记进入该类别的那一次。
 - 中断升级（`ProbeStateMachine.EscalateOutage`）：
   - 同时配置次数与时长 → 达到次数先发 Warning（疑似），达到时长再发 Critical（确认）；
   - 只配置一个阈值 → 达到即 Critical；
@@ -247,9 +249,12 @@ tag v1.2.3-Beta   → AppVersion=1.2.3   AppVersionType=Beta     → --version: 
 |------|------|
 | 备用缓冲区 | `AnsiConsole.AlternateScreen(...)`：在独立画布上绘制，退出（含异常）时整屏还原，滚动历史与提示符不受影响 |
 | 终端尺寸 | `AnsiConsole.Profile.Width` / `Profile.Height`（Spectre 自己探测） |
-| 列数自适应 | `MonitorLayout.ColumnsFor(width)`：宽度不足时依次丢弃日志/延迟/丢包率/目标，始终保留名称+状态 |
+| 列数自适应 | `MonitorLayout.ColumnsFor(width)`：宽度不足时依次丢弃日志/延迟/丢包率/目标，始终保留名称+状态；RTT 分布列（最小/平均/最大/p95）只在 ≥ `FullColumnsWidth`（120）时出现，因为它要占用一个较宽的表头 |
 | 行数自适应 | `MonitorLayout.DataRowCapacity(height)` + `MonitorLayout.Select(...)`：超高时优先保留异常目标，并在 caption 里提示隐藏数量 |
 | 溢出处理 | 单元格统一 `Overflow.Ellipsis`：超长文本截断并显示 `…`，不让表格被撑高 |
+| 垂直溢出 | `Live(...).Overflow(VerticalOverflow.Ellipsis)`：内容变高时截断而不是折行，否则 Live 的光标回退量会与实际不符、画面逐帧错位 |
+| 裁剪方向 | `.Cropping(VerticalOverflowCropping.Bottom)`：默认的 `Top` 在行数算多或窗口被拉窄时裁掉的正是标题与表头 |
+| 刷新 | 只调 `context.UpdateTarget(...)`。`UpdateTarget` 内部已经调 `Refresh`（0.57.2 的 IL 可以证实），再跟一个 `Refresh()` 等于每帧渲染两遍 |
 | 终端能力守卫 | `AnsiConsole.Profile.Capabilities.AlternateBuffer`（0.57+ 提供） |
 
 当前使用 **Spectre.Console 0.57.2**（0.57 起新增依赖 `Spectre.Console.Ansi`，会自动一并还原）。

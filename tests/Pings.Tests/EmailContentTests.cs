@@ -99,6 +99,20 @@ public class EmailContentTests
     }
 
     [Fact]
+    public void 内置HTML不会把标签重复写进值里()
+    {
+        using CultureScope chinese = CultureScope.Chinese();
+
+        string html = EmailContent.Create(new EmailConfig(), Snapshot()).HtmlBody;
+
+        // 左列是标签「丢包率(窗口 10 次)」，右列是值「50.0%」。
+        // 旧实现把两者拼成「丢包率(窗口 10 次)：50.0%」塞进值列，左列又写一次「丢包率」。
+        Assert.Contains("丢包率(窗口 10 次)", html);
+        Assert.DoesNotContain("丢包率(窗口 10 次)：", html);
+        Assert.Contains("50.0%", html);
+    }
+
+    [Fact]
     public void 自定义模板按变量表渲染()
     {
         using CultureScope chinese = CultureScope.Chinese();

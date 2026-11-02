@@ -508,7 +508,7 @@
     <value>{0} 告警: {1}</value>
   </data>
   <data name="MonitorVerboseStatistics">
-    <value>{0} 统计: 发送 {1} / 接收 {2} / 丢包率 {3} / 故障率 {4}</value>
+    <value>{0} 统计: 发送 {1} / 接收 {2} / 丢包率 {3} / 故障率 {4} / RTT 最小/平均/最大/p95 {5} / 标准差 {6}</value>
   </data>
   <data name="MonitorNotificationFailed">
     <value>通知发送失败: {0} - {1}</value>
@@ -557,8 +557,14 @@
   <data name="NotificationLabelLossRate">
     <value>丢包率</value>
   </data>
+  <data name="NotificationLabelLossRateWindow">
+    <value>丢包率(窗口 {0} 次)</value>
+  </data>
   <data name="NotificationLabelFailureRate">
     <value>故障率</value>
+  </data>
+  <data name="NotificationLabelFailureRateWindow">
+    <value>故障率(窗口 {0} 次)</value>
   </data>
   <data name="NotificationLabelTotalLossRate">
     <value>累计丢包率</value>
@@ -571,12 +577,6 @@
   </data>
   <data name="NotificationLineFormat">
     <value>{0}：{1}</value>
-  </data>
-  <data name="NotificationLossRateWithWindow">
-    <value>丢包率(窗口 {0} 次)：{1}</value>
-  </data>
-  <data name="NotificationFailureRateWithWindow">
-    <value>故障率(窗口 {0} 次)：{1}</value>
   </data>
 
   <!-- ── 程序入口 ── -->
@@ -635,6 +635,9 @@
   </data>
   <data name="MonitorColumnDelay">
     <value>延迟</value>
+  </data>
+  <data name="MonitorColumnRtt">
+    <value>最小/平均/最大/p95</value>
   </data>
   <data name="MonitorColumnLoss">
     <value>丢包率</value>

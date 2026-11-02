@@ -116,6 +116,15 @@ namespace Pings.Monitoring
 
                     break;
 
+                case ProbeEventKind.StatusDetail:
+                    // 同一故障类别内的表现切换（设备离线时 ARP 缓存在有旧条目/重新解析失败之间翻转，
+                    // 表现为 请求超时 ↔ 目标主机不可达）。默认不写日志：这些翻转每秒两三条，
+                    // 会把真正的状态变化与中断告警淹没。排障时用 global.enableVerboseLogging 打开。
+                    if (_global.EnableVerboseLogging)
+                        _logging.Log($"{prefix} {e.Event.Message}");
+
+                    break;
+
                 case ProbeEventKind.LossAlarm:
                 case ProbeEventKind.Flapping:
                     _logging.Log(string.Format(Resources.MonitorAlarmLogged, prefix, e.Event.Message));
@@ -125,20 +134,27 @@ namespace Pings.Monitoring
 
                 case ProbeEventKind.DelaySpike:
                     _logging.Log($"{prefix} {e.Event.Message}");
-
-                    if (_global.EnableVerboseLogging)
-                    {
-                        _logging.Log(string.Format(
-                            Resources.MonitorVerboseStatistics,
-                            prefix,
-                            snapshot.Statistics.Sent,
-                            snapshot.Statistics.Received,
-                            snapshot.LossText,
-                            snapshot.FailureText));
-                    }
-
                     break;
             }
+
+            // 详细统计跟着「真实事件」走，而不是只挂在延迟波动上：
+            // 一次状态变化或中断告警发生时，恰恰是最需要看累计计数与 RTT 分布的时刻。
+            // StatusDetail 不记——它可能每秒两三条，会把日志淹掉。
+            if (_global.EnableVerboseLogging && e.Event.Kind != ProbeEventKind.StatusDetail)
+                LogVerboseStatistics(prefix, snapshot);
+        }
+
+        private void LogVerboseStatistics(string prefix, ProbeTaskSnapshot snapshot)
+        {
+            _logging.Log(string.Format(
+                Resources.MonitorVerboseStatistics,
+                prefix,
+                snapshot.Statistics.Sent,
+                snapshot.Statistics.Received,
+                snapshot.LossText,
+                snapshot.FailureText,
+                snapshot.RttDistributionText,
+                snapshot.StdDevText));
         }
 
         private void Notify(ProbeTaskSnapshot snapshot, ProbeSeverity severity)

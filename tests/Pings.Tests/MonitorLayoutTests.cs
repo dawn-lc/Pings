@@ -5,13 +5,41 @@ namespace Pings.Tests;
 public class MonitorLayoutTests
 {
     [Fact]
-    public void 宽窗口显示全部六列()
+    public void 很宽的窗口显示全部七列()
     {
         IReadOnlyList<MonitorColumn> columns = MonitorLayout.ColumnsFor(120);
 
-        Assert.Equal(6, columns.Count);
+        Assert.Equal(MonitorLayout.AllColumns.Count, columns.Count);
+        Assert.Equal(7, columns.Count);
         Assert.Contains(MonitorColumn.Log, columns);
         Assert.Contains(MonitorColumn.Target, columns);
+        Assert.Contains(MonitorColumn.Rtt, columns);
+    }
+
+    [Fact]
+    public void RTT分布列只在足够宽时出现()
+    {
+        // 该列表头要写出四个数字的含义，窗口不够时挤进去只会让每列都变成省略号。
+        Assert.DoesNotContain(MonitorColumn.Rtt, MonitorLayout.ColumnsFor(MonitorLayout.FullColumnsWidth - 1));
+        Assert.Contains(MonitorColumn.Rtt, MonitorLayout.ColumnsFor(MonitorLayout.FullColumnsWidth));
+    }
+
+    [Fact]
+    public void 核心列阈值下仍保留原来的六列()
+    {
+        IReadOnlyList<MonitorColumn> columns = MonitorLayout.ColumnsFor(MonitorLayout.CoreColumnsWidth);
+
+        Assert.Equal(6, columns.Count);
+        Assert.DoesNotContain(MonitorColumn.Rtt, columns);
+        Assert.Contains(MonitorColumn.Log, columns);
+    }
+
+    [Fact]
+    public void 列数不会超过规范列集()
+    {
+        // AllColumns 是「完整显示」判据的单一真相源，任何宽度都不该给出额外列。
+        foreach (int width in new[] { 400, 200, 120, 100, 92, 76, 62, 50, 36, 5 })
+            Assert.True(MonitorLayout.ColumnsFor(width).Count <= MonitorLayout.AllColumns.Count);
     }
 
     [Theory]

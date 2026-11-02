@@ -190,6 +190,39 @@ public class ProbeTaskOptionsTests : IDisposable
         Assert.Equal("50.0%", snapshot.LossText);
         Assert.Equal("30.0%", snapshot.FailureText);
         Assert.Equal("请求超时", snapshot.StatusText);
+
+        // 分布列：最小/平均/最大/p95，不含空格（空格会给单元格额外的折行机会）。
+        Assert.Equal("10/12/20/18", snapshot.RttDistributionText);
+        Assert.DoesNotContain(' ', snapshot.RttDistributionText);
+        Assert.Equal("1.5", snapshot.StdDevText);
+    }
+
+    [Fact]
+    public void 没有成功样本时分布与标准差显示占位符()
+    {
+        ProbeStatisticsSnapshot statistics = default;
+
+        ProbeTaskSnapshot snapshot = new(
+            "a",
+            ProbeProtocol.Icmp,
+            "1.1.1.1",
+            "icmp://1.1.1.1",
+            ProbeStatus.Timeout,
+            null,
+            ProbeFaultCategory.NoResponse,
+            ProbeSeverity.Warning,
+            null,
+            null,
+            12,
+            statistics,
+            DateTimeOffset.Now,
+            "请求超时",
+            null,
+            0,
+            0);
+
+        Assert.Equal("-", snapshot.RttDistributionText);
+        Assert.Equal("-", snapshot.StdDevText);
     }
 
     [Fact]

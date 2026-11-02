@@ -10,7 +10,7 @@ public class ProbeStatusTests
     [InlineData(ProbeStatus.Timeout, ProbeFaultCategory.NoResponse)]
     [InlineData(ProbeStatus.NoReply, ProbeFaultCategory.NoResponse)]
     [InlineData(ProbeStatus.ResponseTimeout, ProbeFaultCategory.NoResponse)]
-    [InlineData(ProbeStatus.Unreachable, ProbeFaultCategory.Unreachable)]
+    [InlineData(ProbeStatus.Unreachable, ProbeFaultCategory.NoResponse)]
     [InlineData(ProbeStatus.PortClosed, ProbeFaultCategory.ServiceUnavailable)]
     [InlineData(ProbeStatus.TlsFailure, ProbeFaultCategory.ServiceUnavailable)]
     [InlineData(ProbeStatus.HttpStatusUnexpected, ProbeFaultCategory.ServiceUnavailable)]
@@ -21,6 +21,22 @@ public class ProbeStatusTests
     public void 分类符合预期(ProbeStatus status, ProbeFaultCategory expected)
     {
         Assert.Equal(expected, status.Category());
+    }
+
+    [Fact]
+    public void 目标沉默的多种表现同属一类()
+    {
+        // 设备离线时 ARP 缓存在「有旧条目」与「重新解析失败」之间翻转，
+        // 表现为 请求超时 ↔ 目标主机不可达；它们必须是同一类别，否则每翻转一次就是一条状态事件。
+        Assert.Equal(ProbeStatus.Timeout.Category(), ProbeStatus.Unreachable.Category());
+        Assert.Equal(ProbeStatus.Timeout.Category(), ProbeStatus.NoReply.Category());
+    }
+
+    [Fact]
+    public void 服务不可用与目标沉默不同类()
+    {
+        // 端口关闭说明主机可达，与「目标整体没响应」是两件事，不能同类。
+        Assert.NotEqual(ProbeStatus.Timeout.Category(), ProbeStatus.PortClosed.Category());
     }
 
     [Fact]

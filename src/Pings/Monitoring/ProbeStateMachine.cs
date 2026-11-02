@@ -5,10 +5,12 @@ namespace Pings.Monitoring
     /// <summary>探测事件类型。</summary>
     public enum ProbeEventKind
     {
-        /// <summary>故障类别发生变化。</summary>
+        /// <summary>故障类别发生变化（含首次故障与恢复）。</summary>
         StatusChanged,
         /// <summary>从故障恢复。</summary>
         Recovered,
+        /// <summary>同一故障类别内的表现切换（超时 ↔ 目标主机不可达）；默认只供 verbose 日志。</summary>
+        StatusDetail,
         /// <summary>延迟显著升高。</summary>
         DelaySpike,
         /// <summary>中断告警（疑似 / 确认）。</summary>
@@ -28,8 +30,9 @@ namespace Pings.Monitoring
     ///
     /// 设计要点：
     /// <list type="bullet">
-    /// <item>状态事件只在「故障类别」变化时产生。同一类别内的状态抖动
-    ///   （<c>Timeout ↔ NoReply</c>）只更新 <see cref="LastEvent" /> 与快照，不重复告警。</item>
+    /// <item>状态事件只在「故障类别」变化时产生（<see cref="ProbeFaultCategory" /> 就是去重粒度）。
+    ///   同一类别内的表现切换（<c>Timeout ↔ NoReply</c>、<c>Timeout ↔ Unreachable</c>）只更新快照，
+    ///   另发一条仅 verbose 可见的明细事件，不重复写日志、不进告警队列。</item>
     /// <item>中断告警是两级升级：先按次数给出疑似（Warning），再按时长确认（Critical）。
     ///   旧实现要求两个阈值同时满足，默认配置下 5 次丢包必须等满 30 秒才报警。</item>
     /// <item>时长一律用单调时钟计算，系统校时不会让 episode 时长跳变。</item>
@@ -122,6 +125,7 @@ namespace Pings.Monitoring
             _severity = result.Status.Severity();
 
             bool categoryChanged = category != previousCategory;
+            bool statusChanged = result.Status != previousStatus;
 
             if (categoryChanged)
             {
@@ -130,6 +134,15 @@ namespace Pings.Monitoring
                     result.Status.IsSuccess() ? ProbeEventKind.Recovered : ProbeEventKind.StatusChanged,
                     _severity,
                     Describe(result)));
+            }
+            else if (statusChanged && !firstResult)
+            {
+                // 类别没变、只是具体表现变了：典型场景是设备离线时 ARP 缓存在「有旧条目」与
+                // 「重新解析失败」之间翻转，探测结果就会在 请求超时 ↔ 目标主机不可达 之间跳。
+                // 这不是两次状态变化，只是同一个故障的两个观测面。
+                // 只发一条低优先级明细，供 --verbose 查看，不进日志与告警队列。
+                events ??= [];
+                events.Add(new ProbeEvent(ProbeEventKind.StatusDetail, ProbeSeverity.Info, Describe(result)));
             }
 
             // 4. 最近事件：高优先级不被低优先级覆盖

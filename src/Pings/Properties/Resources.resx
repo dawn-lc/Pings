@@ -506,7 +506,7 @@ Exit codes:
     <value>{0} alarm: {1}</value>
   </data>
   <data name="MonitorVerboseStatistics">
-    <value>{0} stats: sent {1} / received {2} / loss {3} / failure {4}</value>
+    <value>{0} stats: sent {1} / received {2} / loss {3} / failure {4} / rtt min/avg/max/p95 {5} / sigma {6}</value>
   </data>
   <data name="MonitorNotificationFailed">
     <value>Failed to send notification: {0} - {1}</value>
@@ -555,8 +555,14 @@ Exit codes:
   <data name="NotificationLabelLossRate">
     <value>Loss rate</value>
   </data>
+  <data name="NotificationLabelLossRateWindow">
+    <value>Loss rate (last {0} samples)</value>
+  </data>
   <data name="NotificationLabelFailureRate">
     <value>Failure rate</value>
+  </data>
+  <data name="NotificationLabelFailureRateWindow">
+    <value>Failure rate (last {0} samples)</value>
   </data>
   <data name="NotificationLabelTotalLossRate">
     <value>Total loss rate</value>
@@ -569,12 +575,6 @@ Exit codes:
   </data>
   <data name="NotificationLineFormat">
     <value>{0}: {1}</value>
-  </data>
-  <data name="NotificationLossRateWithWindow">
-    <value>Loss rate (window {0}): {1}</value>
-  </data>
-  <data name="NotificationFailureRateWithWindow">
-    <value>Failure rate (window {0}): {1}</value>
   </data>
 
   <!-- ── 程序入口 ── -->
@@ -633,6 +633,9 @@ Exit codes:
   </data>
   <data name="MonitorColumnDelay">
     <value>Delay</value>
+  </data>
+  <data name="MonitorColumnRtt">
+    <value>min/avg/max/p95</value>
   </data>
   <data name="MonitorColumnLoss">
     <value>Loss</value>

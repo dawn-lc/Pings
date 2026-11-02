@@ -210,13 +210,13 @@ namespace Pings.Properties
         public static string NotificationLabelStatus => Get(nameof(NotificationLabelStatus));
         public static string NotificationLabelDelay => Get(nameof(NotificationLabelDelay));
         public static string NotificationLabelLossRate => Get(nameof(NotificationLabelLossRate));
+        public static string NotificationLabelLossRateWindow => Get(nameof(NotificationLabelLossRateWindow));
         public static string NotificationLabelFailureRate => Get(nameof(NotificationLabelFailureRate));
+        public static string NotificationLabelFailureRateWindow => Get(nameof(NotificationLabelFailureRateWindow));
         public static string NotificationLabelTotalLossRate => Get(nameof(NotificationLabelTotalLossRate));
         public static string NotificationLabelLastEvent => Get(nameof(NotificationLabelLastEvent));
         public static string NotificationLabelTimestamp => Get(nameof(NotificationLabelTimestamp));
         public static string NotificationLineFormat => Get(nameof(NotificationLineFormat));
-        public static string NotificationLossRateWithWindow => Get(nameof(NotificationLossRateWithWindow));
-        public static string NotificationFailureRateWithWindow => Get(nameof(NotificationFailureRateWithWindow));
 
         // ── 程序入口 ──
         public static string ProgramArgumentError => Get(nameof(ProgramArgumentError));
@@ -239,6 +239,7 @@ namespace Pings.Properties
         public static string MonitorColumnTarget => Get(nameof(MonitorColumnTarget));
         public static string MonitorColumnStatus => Get(nameof(MonitorColumnStatus));
         public static string MonitorColumnDelay => Get(nameof(MonitorColumnDelay));
+        public static string MonitorColumnRtt => Get(nameof(MonitorColumnRtt));
         public static string MonitorColumnLoss => Get(nameof(MonitorColumnLoss));
         public static string MonitorColumnLog => Get(nameof(MonitorColumnLog));
         public static string MonitorNoTasks => Get(nameof(MonitorNoTasks));

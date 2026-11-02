@@ -107,8 +107,9 @@ public static class ProbeStatusFacts
     public static ProbeFaultCategory Category(this ProbeStatus status) => status switch
     {
         ProbeStatus.Success => ProbeFaultCategory.None,
-        ProbeStatus.Timeout or ProbeStatus.NoReply or ProbeStatus.ResponseTimeout => ProbeFaultCategory.NoResponse,
-        ProbeStatus.Unreachable => ProbeFaultCategory.Unreachable,
+        // Unreachable 与超时同属 NoResponse：设备离线时两者会随 ARP 状态每几秒翻转，
+        // 是同一个故障的两个观测面，拆成两类会让日志被刷满（见 4.4）。
+        ProbeStatus.Timeout or ProbeStatus.NoReply or ProbeStatus.ResponseTimeout or ProbeStatus.Unreachable => ProbeFaultCategory.NoResponse,
         ProbeStatus.PortClosed or ProbeStatus.HttpStatusUnexpected or ProbeStatus.TlsFailure => ProbeFaultCategory.ServiceUnavailable,
         ProbeStatus.DnsFailure => ProbeFaultCategory.NameResolution,
         ProbeStatus.ProtocolError => ProbeFaultCategory.ProtocolError,
@@ -367,9 +368,11 @@ stateDiagram-v2
 ### 4.4 事件与去重
 
 - `StateChanged` 只在 **`ProbeFaultCategory` 变化**时触发，不再按原始 `ProbeStatus` 触发；
+- `NoResponse` 统括「目标整体没响应」的多种表现（`Timeout` / `NoReply` / `ResponseTimeout` / `Unreachable`）：设备离线时 ARP 缓存在「有旧条目」与「重新解析失败」之间翻转，会表现为 `请求超时 ↔ 目标主机不可达`，那是同一故障的两个观测面；
+- 类别不变、只是 `ProbeStatus` 变了时产生 `StatusDetail`（`Info` 级）明细事件，默认不写日志，`--verbose` 时输出；
 - `LastEvent` 的更新优先级：`Critical` > `Warning` > 状态变化 > 延迟波动 > 普通成功，低优先级不得覆盖高优先级（修复第 1.3 节第 3 条）；
-- 同一 `ProbeStatus` 的连续变化只更新 `Detail` 文本与日志，不产生事件、不入告警队列；
-- 恢复（`Category` 变为 `None`）单独触发一次恢复事件，受 `notifyOnRecovery` 控制。
+- 同一故障类别内的连续变化只更新 `Detail` 文本与快照，不产生状态事件、不入告警队列；
+- 恢复（`Group` 变为 `None`）单独触发一次恢复事件，受 `notifyOnRecovery` 控制。
 
 ### 4.5 通知冷却与告警队列
 

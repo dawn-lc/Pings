@@ -34,16 +34,21 @@ namespace Pings.Monitoring
     }
 
     /// <summary>
-    /// 故障类别，用于事件聚合与告警去重。
+    /// 故障类别。它同时是**事件聚合与告警去重的粒度**：同一类别内的不同表现（<c>请求超时 ↔ 目标主机不可达</c>、
+    /// <c>超时 ↔ 无回应</c>）不重复产生状态事件。
     /// </summary>
+    /// <remarks>
+    /// 为何 <c>Unreachable</c> 不单独成类：设备离线时，ARP 缓存里还有旧条目就表现为超时，
+    /// 条目过期后重新解析失败就表现为不可达——两者随 ARP 状态每几秒翻转一次，是同一个故障的两个观测面。
+    /// 若单独成类，一台离线设备会把日志刷满，真正的状态变化与中断告警反被淹没。
+    /// 具体原因不会丢：<see cref="ProbeStatus" /> 本身、界面状态列与日志文案仍然区分两者。
+    /// </remarks>
     public enum ProbeFaultCategory
     {
         /// <summary>正常。</summary>
         None,
-        /// <summary>无响应（超时 / 无回声 / 响应超时）。</summary>
+        /// <summary>目标没有给出可用回应：超时、无回声、响应超时、明确不可达（ICMP 不可达 / TTL 过期）。</summary>
         NoResponse,
-        /// <summary>目标不可达。</summary>
-        Unreachable,
         /// <summary>主机可达但服务不可用（端口关闭 / 状态码异常 / TLS 失败）。</summary>
         ServiceUnavailable,
         /// <summary>域名解析问题。</summary>
@@ -106,8 +111,7 @@ namespace Pings.Monitoring
         public static ProbeFaultCategory Category(this ProbeStatus status) => status switch
         {
             ProbeStatus.Success => ProbeFaultCategory.None,
-            ProbeStatus.Timeout or ProbeStatus.NoReply or ProbeStatus.ResponseTimeout => ProbeFaultCategory.NoResponse,
-            ProbeStatus.Unreachable => ProbeFaultCategory.Unreachable,
+            ProbeStatus.Timeout or ProbeStatus.NoReply or ProbeStatus.ResponseTimeout or ProbeStatus.Unreachable => ProbeFaultCategory.NoResponse,
             ProbeStatus.PortClosed or ProbeStatus.HttpStatusUnexpected or ProbeStatus.TlsFailure => ProbeFaultCategory.ServiceUnavailable,
             ProbeStatus.DnsFailure => ProbeFaultCategory.NameResolution,
             ProbeStatus.ProtocolError => ProbeFaultCategory.ProtocolError,

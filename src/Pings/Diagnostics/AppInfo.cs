@@ -50,9 +50,7 @@ namespace Pings.Diagnostics
         /// 界面 / 日志用的版本文本。Release 不带后缀，其它类型带 <c>-类型</c>，
         /// 这样 beta 包与正式包在 <c>--version</c>、日志、窗口标题里都能分辨。
         /// </summary>
-        public static string VersionText => IsRelease
-            ? $"{ProductName} {Version}"
-            : $"{ProductName} {Version}-{VersionType}";
+        public static string VersionText => FormatVersionText(Version, VersionType);
 
         /// <summary>
         /// 按指定类型拼出版本文本（供测试与工作流断言复用同一份规则）。

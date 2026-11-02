@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Pings.Monitoring
 {
     /// <summary>
@@ -30,6 +32,9 @@ namespace Pings.Monitoring
         /// <summary>延迟文本，非成功时显示 "-"。</summary>
         public string DelayText => DelayMs is { } delay ? $"{delay:0}ms" : "-";
 
+        /// <summary>时间戳文本（<c>yyyy-MM-dd HH:mm:ss</c>）。固定不变文化：日志、通知与快照必须一致。</summary>
+        public string TimestampText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
         /// <summary>抖动文本，样本不足时显示 "-"。</summary>
         public string JitterText => Statistics.JitterMs is { } jitter ? $"±{jitter:0.#}ms" : "-";
 
@@ -38,5 +43,16 @@ namespace Pings.Monitoring
 
         /// <summary>滑窗故障率文本（含端口关闭、DNS / TLS 失败、状态码异常）。</summary>
         public string FailureText => $"{Statistics.WindowFailureRate * 100:0.0}%";
+
+        /// <summary>
+        /// 窗口内 RTT 分布文本：<c>最小/平均/最大/p95</c>（毫秒），无成功样本时为 "-"。
+        /// </summary>
+        /// <remarks>不含空格：表格单元格靠 <c>Overflow.Ellipsis</c> 截断，空格会给它额外折行的机会。</remarks>
+        public string RttDistributionText => Statistics.P95RttMs is null
+            ? "-"
+            : $"{Statistics.MinRttMs.GetValueOrDefault():0}/{Statistics.AverageRttMs.GetValueOrDefault():0}/{Statistics.MaxRttMs.GetValueOrDefault():0}/{Statistics.P95RttMs.GetValueOrDefault():0}";
+
+        /// <summary>窗口内 RTT 标准差文本，样本不足时为 "-"。</summary>
+        public string StdDevText => Statistics.StdDevMs is { } stdDev ? $"{stdDev:0.#}" : "-";
     }
 }

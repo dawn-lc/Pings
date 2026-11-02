@@ -39,7 +39,7 @@ namespace Pings.Notifications
                 ["Failed"] = snapshot.Statistics.Failed.ToString(CultureInfo.InvariantCulture),
                 ["LastEvent"] = snapshot.LastEvent,
                 ["Warning"] = snapshot.Warning ?? string.Empty,
-                ["CurrentTime"] = snapshot.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+                ["CurrentTime"] = snapshot.TimestampText
             };
         }
     }
